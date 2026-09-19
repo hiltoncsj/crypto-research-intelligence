@@ -157,7 +157,23 @@ corrigiu um bug real de infraestrutura: `getEventImpactsForProject`
 Prisma (5 conexões) com `Promise.all` sem limite sobre muitos eventos de um projeto — só
 reproduzível com volume real (Lido, 35 eventos); corrigido com processamento sequencial
 (`EVENT_IMPACT_BATCH_SIZE = 1`) + teste de regressão. Ver `SPRINT_21_IMPLEMENTATION_REPORT.md`
-para a auditoria completa (424 testes passando, 0 falhando).
+para a auditoria completa (424 testes passando, 0 falhando). O Sprint 22 expandiu a amostra de 4
+para **7 projetos reais** em 6 setores (+ GMX V2 Perps/Derivatives, Stargate V2/Cross-Chain
+Bridge, Balancer V2/AMM — `curve-dex` falhou isolado por resposta inválida da própria DefiLlama)
+e mediu GitHub Releases fora de Lending: **433 eventos GitHub reais, 100% OTHER** (era 85 no
+Sprint 21) — confirma que a baixa densidade de sinal não é peculiaridade de um setor. Pela
+primeira vez a engine disparou de verdade em produção (28 matches reais em Stargate), e a
+auditoria do corpo real dos releases encontrou um **falso positivo confirmado**: a frase
+"`<ChainName> mainnet/testnet deployment`" aparece rotineiramente em changelogs automáticos de
+bridges cross-chain para descrever adição de suporte a uma nova chain, não lançamento do próprio
+protocolo. Corrigido com evidência real (`mainnet-launch-v1`/`testnet-launch-v1` →
+`mainnet-launch-v2`/`testnet-launch-v2`, removido o padrão bare "X deployment") e os 28 eventos
+já persistidos foram corrigidos em produção via `reclassifyExistingGithubEvents` — primeira vez
+que esse mecanismo (Sprint 20) foi usado contra dados reais. Nenhuma fonte nova foi implementada
+(Official Blog, Discourse, GitHub Commits/Tags investigados e rejeitados — sem host único/schema
+identificável ou sem ganho semântico real). Decisão registrada: GitHub Releases é `PARTIALLY`
+adequado como fonte (tecnicamente sólido, mas não captura anúncios de produto). Ver
+`SPRINT_22_IMPLEMENTATION_REPORT.md` (426 testes passando, 0 falhando).
 
 Monorepo `apps/web` mais `packages/{database,defi-data,research-engine,scoring-engine,queue,shared}`
 

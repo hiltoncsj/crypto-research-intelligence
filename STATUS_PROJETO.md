@@ -624,6 +624,45 @@ Ver `SPRINT_21_IMPLEMENTATION_REPORT.md` para os detalhes completos. Resumo:
 
 ---
 
+## 2.23 Sprint 22 — Multi-Sector Event Source Expansion & Intelligence Coverage (implementado)
+
+Ver `SPRINT_22_IMPLEMENTATION_REPORT.md` para os detalhes completos. Resumo:
+
+- **Amostra expandida de 4 para 7 projetos reais**, cobrindo 6 setores: GMX V2 Perps
+  (Derivatives), Stargate V2 (Cross-Chain Bridge), Balancer V2 (AMM) — além dos 4 já curados no
+  Sprint 21. `curve-dex` falhou isolado (`"Resposta JSON inválida"` da própria DefiLlama para
+  esse protocolo especificamente — não investigado a fundo, fora do escopo).
+- **433 eventos GitHub reais coletados** (era 85) — **100% permaneceram `OTHER`**, confirmando
+  em 6 setores que a baixa densidade de sinal de anúncio em GitHub Releases não é peculiaridade
+  do setor Lending observado no Sprint 21.
+- **Primeira vez que a Classification Engine disparou de verdade em produção**: 28 matches reais
+  (26 `MAINNET` + 2 `TESTNET`) em Stargate. Auditoria do corpo real de 2 releases via GitHub API
+  confirmou **falso positivo real**: a frase `"<ChainName> mainnet/testnet deployment"` aparece
+  rotineiramente em changelogs automáticos (changesets bot) de bridges cross-chain para
+  descrever adição de suporte a uma nova chain (ex.: `"InjectiveEVM mainnet deployment"`), não
+  um anúncio de lançamento do próprio protocolo.
+- **Regras corrigidas com evidência real**: `mainnet-launch-v1`/`testnet-launch-v1` →
+  `mainnet-launch-v2`/`testnet-launch-v2` — removido o padrão bare "X deployment"
+  (`packages/scoring-engine/src/event-classification.ts`), mantidas as frases inequívocas
+  (is live/launched/goes live). 2 testes de regressão adicionados.
+- **Primeiro uso em produção do mecanismo de reclassificação** (Sprint 20,
+  `reclassifyExistingGithubEvents`): 28 eventos já persistidos corrigidos (`scanned: 346,
+reclassified: 28, unchanged: 318`), 0 remanescentes com categoria incorreta.
+- **Nenhuma fonte nova implementada** — Official Blog/Announcements, Discourse (fóruns de
+  governança), GitHub Commits/Tags investigados e rejeitados (sem host único/schema
+  identificável, ou sem ganho semântico sobre Releases). Decisão registrada:
+  `GITHUB_AS_SOURCE = PARTIALLY` (tecnicamente sólido, mas não é fonte primária adequada de
+  catalisadores de anúncio); `CLASSIFICATION_ENGINE = KEEP` (com a correção pontual já
+  aplicada).
+- Idempotência confirmada em 3 execuções completas (0 duplicações). Event Impact validado com
+  dados reais de um setor novo (GMX/Derivatives). Dashboard (`getEventIntelligenceOverview`) NÃO
+  validado integralmente — interrompido por memória do ambiente local pela 2ª vez consecutiva
+  (Sprint 21 e 22); recomendado revisitar em ambiente com mais memória.
+- Resultado: **426 testes passando, 0 falhando** (424 + 2 de regressão), typecheck/lint/build
+  limpos, 0 findings de segurança.
+
+---
+
 ## 3. O que falta
 
 ### 3.1 Fora de escopo (deliberadamente, confirmado ausente no código)

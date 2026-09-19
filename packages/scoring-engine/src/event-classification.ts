@@ -81,13 +81,22 @@ const PRIORITY_ORDER = [
 // palavra-chave, nunca a palavra-chave isolada.
 const RULES: ClassificationRule[] = [
   {
-    id: "mainnet-launch-v1",
+    // Sprint 22 (Multi-Sector Event Source Expansion): v2 — removido o padrão bare "mainnet
+    // deployment" (e o equivalente testnet abaixo), que era `v1`. Causa: 26 falsos positivos
+    // REAIS confirmados em produção (Stargate, projeto de bridge cross-chain) — changelogs
+    // automáticos de release (changesets bot) usam a frase "<ChainName> mainnet deployment"
+    // para descrever ROTINA de adicionar suporte a uma nova chain (ex.: "InjectiveEVM mainnet
+    // deployment", "Cronos zkEVM mainnet deployment"), não um anúncio de que O PRÓPRIO
+    // protocolo lançou em mainnet. Confirmado lendo o corpo real de 2 releases via GitHub API
+    // nesta sprint (ver SPRINT_22_IMPLEMENTATION_REPORT.md, seção "OTHER Analysis"/"Rules
+    // Changed"). As demais frases (is live/launched/goes live) são muito mais específicas de
+    // um anúncio real e não apresentaram esse problema — mantidas.
+    id: "mainnet-launch-v2",
     category: "MAINNET",
     confidence: "HIGH",
     patterns: [
       /\bmainnet\s+is\s+(now\s+)?live\b/i,
       /\bmainnet\s+(has\s+)?launch(es|ed)?\b/i,
-      /\bmainnet\s+deployment\b/i,
       /\bmainnet\s+goes\s+live\b/i,
       /\blançamento\s+da\s+mainnet\b/i,
       /\bmainnet\s+lançada\b/i,
@@ -95,14 +104,16 @@ const RULES: ClassificationRule[] = [
     ],
   },
   {
-    id: "testnet-launch-v1",
+    // Sprint 22: v2 — mesmo motivo do `mainnet-launch-v2` acima (2 falsos positivos reais
+    // confirmados: "Avalanche Fuji testnet configuration"/"Monad testnet deployment" em
+    // changelogs automáticos do Stargate).
+    id: "testnet-launch-v2",
     category: "TESTNET",
     confidence: "HIGH",
     patterns: [
       /\btestnet\s+launch(es|ed)?\b/i,
       /\btestnet\s+is\s+(now\s+)?live\b/i,
       /\bpublic\s+testnet\s+launch(es|ed)?\b/i,
-      /\btestnet\s+deployment\b/i,
     ],
   },
   {

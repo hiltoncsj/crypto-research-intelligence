@@ -400,7 +400,7 @@ describe("events-repository (Prisma, integração real)", () => {
       const result = await persistGithubReleaseCatalysts(projectId, [
         release({ title: "Mainnet is now live", releaseId: 555 }),
       ]);
-      expect(result.classification.ruleUsage["mainnet-launch-v1"]).toBe(1);
+      expect(result.classification.ruleUsage["mainnet-launch-v2"]).toBe(1);
 
       const catalysts = await getCatalysts(projectId);
       expect(catalysts[0]?.category).toBe("MAINNET");
@@ -599,7 +599,7 @@ describe("events-repository (Prisma, integração real)", () => {
       const after = await prisma.researchEvent.findUnique({ where: { id: before.id } });
       expect(after?.category).toBe("MAINNET");
       expect(after?.classificationMethod).toBe("RULE");
-      expect(after?.classificationRuleId).toBe("mainnet-launch-v1");
+      expect(after?.classificationRuleId).toBe("mainnet-launch-v2");
       // Nunca alterados:
       expect(after?.sourceId).toBe("12345");
       expect(after?.eventDate?.toISOString()).toBe("2026-01-01T00:00:00.000Z");

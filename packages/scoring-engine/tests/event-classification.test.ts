@@ -11,7 +11,7 @@ describe("classifyEvent — MAINNET", () => {
     const r = classifyEvent({ title: "Mainnet is now live" });
     expect(r.category).toBe("MAINNET");
     expect(r.confidence).toBe("HIGH");
-    expect(r.ruleId).toBe("mainnet-launch-v1");
+    expect(r.ruleId).toBe("mainnet-launch-v2");
     expect(r.evidence).toBeTruthy();
   });
 });
@@ -102,6 +102,30 @@ describe("classifyEvent — casos ambíguos (regra de conservadorismo, Fase 8)",
   it('"Testnet coming soon" → NÃO é TESTNET (ainda não aconteceu)', () => {
     const r = classifyEvent({ title: "Testnet coming soon" });
     expect(r.category).not.toBe("TESTNET");
+  });
+
+  // Sprint 22 (Multi-Sector Event Source Expansion) — regressão para 28 falsos positivos REAIS
+  // confirmados em produção (Stargate, bridge cross-chain): changelogs automáticos usam a frase
+  // "<ChainName> mainnet/testnet deployment" para descrever adição de suporte a uma nova chain,
+  // não um anúncio de lançamento do próprio protocolo. Motivou remover o padrão bare "mainnet/
+  // testnet deployment" (mainnet-launch-v1/testnet-launch-v1 → v2). Ver
+  // SPRINT_22_IMPLEMENTATION_REPORT.md.
+  it('"InjectiveEVM mainnet deployment" → NÃO é MAINNET (falso positivo real confirmado no Sprint 22)', () => {
+    const r = classifyEvent({
+      title: "@stargatefinance/stg-evm-v2@6.1.2",
+      description: "Patch Changes: InjectiveEVM mainnet deployment",
+    });
+    expect(r.category).not.toBe("MAINNET");
+    expect(r.category).toBe("OTHER");
+  });
+
+  it('"Monad testnet deployment" → NÃO é TESTNET (falso positivo real confirmado no Sprint 22)', () => {
+    const r = classifyEvent({
+      title: "@stargatefinance/stg-evm-v2@2.0.3",
+      description: "Avalanche Fuji testnet configuration, Monad testnet deployment",
+    });
+    expect(r.category).not.toBe("TESTNET");
+    expect(r.category).toBe("OTHER");
   });
 
   it("título e descrição vazios → OTHER / LOW, nunca lança", () => {

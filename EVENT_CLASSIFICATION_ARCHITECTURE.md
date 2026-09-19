@@ -68,8 +68,8 @@ significado de eventos já classificados por ela):
 
 | Categoria             | ruleId                   | Confidence | Exemplos de padrão exigido                                                   |
 | --------------------- | ------------------------ | ---------- | ---------------------------------------------------------------------------- |
-| `MAINNET`             | `mainnet-launch-v1`      | HIGH       | "mainnet is live", "mainnet launched", "mainnet deployment"                  |
-| `TESTNET`             | `testnet-launch-v1`      | HIGH       | "testnet launches", "testnet is live", "public testnet launch"               |
+| `MAINNET`             | `mainnet-launch-v2`      | HIGH       | "mainnet is live", "mainnet launched", "mainnet goes live"                   |
+| `TESTNET`             | `testnet-launch-v2`      | HIGH       | "testnet launches", "testnet is live", "public testnet launch"               |
 | `PROTOCOL_UPGRADE`    | `protocol-upgrade-v1`    | HIGH       | "protocol upgrade", "hard fork", "upgrade deployed"                          |
 | `TOKEN_MIGRATION`     | `token-migration-v1`     | HIGH       | "token migration", "migration begins", "token swap"                          |
 | `TOKEN_BURN`          | `token-burn-v1`          | HIGH       | "tokens were burned", "burn event" (exclui "burn mechanism"/"burn proposal") |
@@ -85,6 +85,15 @@ significado de eventos já classificados por ela):
 isolado — toda regra exige um verbo/ação junto ("mainnet **is live**", não "mainnet" sozinho).
 `"Preparing for mainnet"` e `"How mainnet works"` nunca casam com a regra `MAINNET` — testado
 explicitamente.
+
+**Histórico de correção (Sprint 22)**: `mainnet-launch-v1`/`testnet-launch-v1` incluíam
+originalmente o padrão bare `/\bmainnet\s+deployment\b/i` (sugerido pelo próprio documento de
+especificação do Sprint 20). Validação com dados reais (Stargate, bridge cross-chain) encontrou
+**28 falsos positivos confirmados**: changelogs automáticos de monorepo usam a frase
+`"<ChainName> mainnet/testnet deployment"` para descrever ROTINA de adicionar suporte a uma nova
+chain (ex.: `"InjectiveEVM mainnet deployment"`), não um anúncio de que o próprio protocolo
+lançou. O padrão foi removido em `v2`; os 28 eventos já persistidos foram corrigidos via
+`reclassifyExistingGithubEvents` (seção 11). Ver `SPRINT_22_IMPLEMENTATION_REPORT.md`.
 
 ## 6. Prioridade entre categorias (múltiplos sinais no mesmo texto)
 
