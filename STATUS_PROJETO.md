@@ -463,7 +463,7 @@ Ver `SPRINT_16_IMPLEMENTATION_REPORT.md` para o relatório completo. Resumo:
 - **Página de "Narrativas"**: mencionada no plano original (seção 5, escopo do MVP) mas não existe no dashboard atual — provavelmente foi absorvida pela página de rankings, ou simplesmente ainda não foi construída.
 - **Infraestrutura parcialmente containerizada**: o `docker-compose.yml` só sobe Postgres e Redis. O worker e o scheduler rodam como processos TypeScript separados (`npm run worker:dev` / `npm run scheduler:dev`), não como serviços no compose — ou seja, "subir o projeto" hoje exige rodar 2–3 comandos manuais, não `docker compose up` sozinho.
 - **Sem testes de UI/dashboard**: toda a cobertura de teste está em backend (engines, repositórios, API routes) — não há testes de componente ou end-to-end para as páginas React do dashboard.
-- **Repositório git ainda não inicializado**: o CI já está escrito e pronto, mas não vai rodar até existir um `git init` + commit + push para um remoto no GitHub.
+- **Repositório git inicializado (2026-09-19, Sprint 16)**: `git init` + primeiro commit feitos, mas ainda sem remoto configurado — o CI (`.github/workflows/ci.yml`) só passa a rodar de verdade depois de um `git push` para um repositório no GitHub.
 - **`npm test` na raiz exigia exportar `DATABASE_URL` manualmente (corrigido no Sprint 12)**: ver
   seção 2.14 — não é mais uma lacuna, registrado aqui só para histórico de quem ler versões
   antigas deste arquivo.
@@ -566,10 +566,11 @@ Nenhuma dessas 4 é bloqueante entre si — podem ser feitas em qualquer ordem, 
    0, nada implementado" e lista Funding/Tokenomics/Unlocks como fora do MVP — vale reescrever
    ou pelo menos marcar as seções obsoletas, para não confundir leitura futura (seção 3.3 acima).
 4. **Limpeza de organização** (baixo risco, baixo esforço): remover `bash.exe.stackdump` e
-   `.scratch/` vazio da raiz; corrigir bug de ordem de FK no `afterAll` de
-   `funding-and-capital.integration.test.ts`; decidir sobre containerizar worker/scheduler no
-   `docker-compose.yml`; inicializar o repositório git (`git init` + push) para o CI começar a
-   rodar de verdade.
+   `.scratch/` vazio da raiz; decidir sobre containerizar worker/scheduler no
+   `docker-compose.yml`; configurar o remoto GitHub e fazer `git push` (o repositório git já foi
+   inicializado e o primeiro commit já existe, Sprint 16 — falta só o remoto) para o CI começar a
+   rodar de verdade. (O bug de ordem de FK do `funding-and-capital.integration.test.ts` já foi
+   revalidado e não reproduzido no Sprint 12 — ver seção 3.2.)
 
 Fora de escopo deliberado, sem mudança de status (ver seção 3.1): Second Brain completo,
 Pine Script/Technical Score, Backtesting avançado, multi-tenant, Improvement Proposals
