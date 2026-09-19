@@ -1,5 +1,11 @@
 import { prisma } from "@crypto-research/database";
-import { calculateWindowMetrics, loadSeries } from "@crypto-research/research-engine";
+import {
+  calculateWindowMetrics,
+  getLatestProjectProfile,
+  getTokenMarkets,
+  loadSeries,
+  type TokenMarketView,
+} from "@crypto-research/research-engine";
 
 // Sprint 3 (Fase 21): camada de serviço para leitura de dados já persistidos — usada pelo
 // dashboard. O disparo do pipeline em si passou a ser assíncrono a partir do Sprint 4
@@ -36,6 +42,27 @@ export interface ProjectTokenomicsRaw {
   unlocks: Array<{ unlockDate: string; amount: number; allocationType: string }>;
 }
 
+// Sprint 13 (Perfil do Projeto + Onde é Negociado) — mesmas funções já usadas por
+// packages/research-engine/src/report.ts, reaproveitadas aqui (nunca duplicadas) para exibir na
+// página do projeto, não só no Markdown baixável.
+export interface ProjectProfileView {
+  descriptionEn: string | null;
+  categories: string[];
+  platforms: string[];
+  homepageUrl: string | null;
+  retrievedAt: string;
+}
+
+export interface ProjectMarketView {
+  exchangeName: string;
+  baseSymbol: string;
+  targetSymbol: string;
+  marketType: string;
+  tradeUrl: string | null;
+  volumeUsd: number | null;
+  retrievedAt: string;
+}
+
 export interface ProjectDashboardData {
   slug: string;
   name: string;
@@ -43,6 +70,8 @@ export interface ProjectDashboardData {
   revenue: Awaited<ReturnType<typeof calculateWindowMetrics>>;
   fees: Awaited<ReturnType<typeof calculateWindowMetrics>>;
   tvlHistory: Array<{ sourceTimestamp: string; valueUsd: number }>;
+  profile: ProjectProfileView | null;
+  markets: ProjectMarketView[];
   lastUpdated: string | null;
   identification: ProjectIdentification;
   classification: ProjectClassification;
@@ -65,15 +94,18 @@ export async function getProjectDashboardData(slug: string): Promise<ProjectDash
   });
   if (!project) return null;
 
-  const [tvlSeries, revenueSeries, feesSeries, latestSelection] = await Promise.all([
-    loadSeries("TVL", project.id),
-    loadSeries("REVENUE", project.id),
-    loadSeries("FEES", project.id),
-    prisma.researchRunSelection.findFirst({
-      where: { projectId: project.id },
-      orderBy: { createdAt: "desc" },
-    }),
-  ]);
+  const [tvlSeries, revenueSeries, feesSeries, latestSelection, profile, markets] =
+    await Promise.all([
+      loadSeries("TVL", project.id),
+      loadSeries("REVENUE", project.id),
+      loadSeries("FEES", project.id),
+      prisma.researchRunSelection.findFirst({
+        where: { projectId: project.id },
+        orderBy: { createdAt: "desc" },
+      }),
+      getLatestProjectProfile(project.id),
+      getTokenMarkets(project.id),
+    ]);
 
   const lastTvlSnapshot = await prisma.tvlSnapshot.findFirst({
     where: { projectId: project.id },
@@ -91,6 +123,24 @@ export async function getProjectDashboardData(slug: string): Promise<ProjectDash
       valueUsd: point.valueUsd,
     })),
     lastUpdated: lastTvlSnapshot?.retrievedAt.toISOString() ?? null,
+    profile: profile
+      ? {
+          descriptionEn: profile.descriptionEn,
+          categories: profile.categories,
+          platforms: profile.platforms,
+          homepageUrl: profile.homepageUrl,
+          retrievedAt: profile.retrievedAt.toISOString(),
+        }
+      : null,
+    markets: markets.map((m: TokenMarketView) => ({
+      exchangeName: m.exchangeName,
+      baseSymbol: m.baseSymbol,
+      targetSymbol: m.targetSymbol,
+      marketType: m.marketType,
+      tradeUrl: m.tradeUrl,
+      volumeUsd: m.volumeUsd,
+      retrievedAt: m.retrievedAt.toISOString(),
+    })),
     identification: {
       sector: project.sector.name,
       narrative: project.narrativeId,

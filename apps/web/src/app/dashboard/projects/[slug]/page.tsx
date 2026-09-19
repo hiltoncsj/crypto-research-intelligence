@@ -40,6 +40,26 @@ interface ProjectTokenomicsRaw {
   unlocks: Array<{ unlockDate: string; amount: number; allocationType: string }>;
 }
 
+// Sprint 13 (Perfil do Projeto + Onde é Negociado) — shape espelha
+// apps/web/src/lib/research.ts (`ProjectProfileView`/`ProjectMarketView`).
+interface ProjectProfileView {
+  descriptionEn: string | null;
+  categories: string[];
+  platforms: string[];
+  homepageUrl: string | null;
+  retrievedAt: string;
+}
+
+interface ProjectMarketView {
+  exchangeName: string;
+  baseSymbol: string;
+  targetSymbol: string;
+  marketType: string;
+  tradeUrl: string | null;
+  volumeUsd: number | null;
+  retrievedAt: string;
+}
+
 interface ProjectData {
   slug: string;
   name: string;
@@ -48,6 +68,8 @@ interface ProjectData {
   fees: WindowMetrics;
   tvlHistory: Array<{ sourceTimestamp: string; valueUsd: number }>;
   lastUpdated: string | null;
+  profile: ProjectProfileView | null;
+  markets: ProjectMarketView[];
   identification: ProjectIdentification;
   classification: ProjectClassification;
   tokenomics: ProjectTokenomicsRaw;
@@ -495,6 +517,132 @@ function FundingSection({
   );
 }
 
+// Sprint 13 (Parte B — Perfil do Projeto): contexto factual, nunca recomendação — mesmo texto/
+// fonte já usados no Project Report (Markdown), agora também na página. Fonte: CoinGecko (mesmo
+// payload já buscado para FDV/supplies, Sprint 11 — nenhuma chamada HTTP extra).
+function ProfileSection({ profile }: { profile: ProjectProfileView | null }) {
+  return (
+    <div style={cardStyle()}>
+      <h3 style={{ margin: 0, fontSize: 14, color: theme.textMuted, fontWeight: 500 }}>
+        Perfil do Projeto
+      </h3>
+      {!profile ? (
+        <p style={{ color: theme.textMuted, fontSize: 13, marginTop: 8 }}>
+          N/A — sem `coinGeckoId` conhecido para este projeto, ou a última coleta não retornou dados
+          de perfil.
+        </p>
+      ) : (
+        <>
+          <ul style={{ listStyle: "none", padding: 0, marginTop: 10, fontSize: 13 }}>
+            <li style={{ padding: "3px 0" }}>
+              <span style={{ color: theme.textMuted }}>Categoria: </span>
+              {profile.categories.length > 0 ? profile.categories.join(", ") : "N/A"}
+            </li>
+            <li style={{ padding: "3px 0" }}>
+              <span style={{ color: theme.textMuted }}>Blockchain(s): </span>
+              {profile.platforms.length > 0 ? profile.platforms.join(", ") : "N/A"}
+            </li>
+            <li style={{ padding: "3px 0" }}>
+              <span style={{ color: theme.textMuted }}>Site oficial: </span>
+              {profile.homepageUrl ? (
+                <a href={profile.homepageUrl} target="_blank" rel="noreferrer noopener">
+                  {profile.homepageUrl}
+                </a>
+              ) : (
+                "N/A"
+              )}
+            </li>
+          </ul>
+          {profile.descriptionEn && (
+            <p style={{ fontSize: 13, marginTop: 10, lineHeight: 1.5 }}>{profile.descriptionEn}</p>
+          )}
+          <p style={{ color: theme.textMuted, fontSize: 12, marginTop: 8 }}>
+            Fonte: CoinGecko — coletado em {new Date(profile.retrievedAt).toLocaleDateString()}.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function formatVolumeUsd(value: number | null): string {
+  if (value === null) return "N/A";
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
+  return `$${value.toFixed(0)}`;
+}
+
+// Sprint 13 (Parte B — Onde o Token é Negociado): dado factual observado na última coleta,
+// NUNCA ranking/recomendação de exchange (seção 17 do Sprint 13).
+function MarketsSection({ markets }: { markets: ProjectMarketView[] }) {
+  return (
+    <div style={cardStyle()}>
+      <h3 style={{ margin: 0, fontSize: 14, color: theme.textMuted, fontWeight: 500 }}>
+        Onde o Token é Negociado
+      </h3>
+      {markets.length === 0 ? (
+        <p style={{ color: theme.textMuted, fontSize: 13, marginTop: 8 }}>
+          Mercados identificados: N/A — não foram encontrados mercados verificáveis na última
+          coleta.
+        </p>
+      ) : (
+        <>
+          <p style={{ color: theme.textMuted, fontSize: 12, marginTop: 8 }}>
+            Na última coleta ({new Date(markets[0]!.retrievedAt).toLocaleDateString()}) — apenas
+            dados observados, sem recomendação.
+          </p>
+          <div style={{ overflowX: "auto", marginTop: 8 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr
+                  style={{
+                    textAlign: "left",
+                    color: theme.textMuted,
+                    borderBottom: `1px solid ${theme.border}`,
+                  }}
+                >
+                  <th style={{ padding: "4px 8px" }}>Exchange</th>
+                  <th style={{ padding: "4px 8px" }}>Par</th>
+                  <th style={{ padding: "4px 8px" }}>Tipo</th>
+                  <th style={{ padding: "4px 8px" }}>Volume observado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {markets.slice(0, 20).map((m, i) => (
+                  <tr
+                    key={`${m.exchangeName}-${m.baseSymbol}-${m.targetSymbol}-${i}`}
+                    style={{ borderBottom: `1px solid ${theme.border}` }}
+                  >
+                    <td style={{ padding: "6px 8px" }}>
+                      {m.tradeUrl ? (
+                        <a href={m.tradeUrl} target="_blank" rel="noreferrer noopener">
+                          {m.exchangeName}
+                        </a>
+                      ) : (
+                        m.exchangeName
+                      )}
+                    </td>
+                    <td style={{ padding: "6px 8px" }}>
+                      {m.baseSymbol}/{m.targetSymbol}
+                    </td>
+                    <td style={{ padding: "6px 8px" }}>{m.marketType}</td>
+                    <td style={{ padding: "6px 8px" }}>{formatVolumeUsd(m.volumeUsd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {markets.length > 20 && (
+            <p style={{ color: theme.textMuted, fontSize: 12, marginTop: 8 }}>
+              +{markets.length - 20} outros mercados identificados, não listados acima.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // Sprint 10 (Parte 5): Identificação — dados diretos do Project/Sector/ProjectChain, sem cálculo.
 function IdentificationSection({ identification }: { identification: ProjectIdentification }) {
   return (
@@ -916,6 +1064,15 @@ export default function ProjectDetailPage() {
         </div>
         <div style={{ flex: "1 1 280px" }}>
           <ClassificationSection classification={data.classification} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
+        <div style={{ flex: "1 1 320px" }}>
+          <ProfileSection profile={data.profile} />
+        </div>
+        <div style={{ flex: "1 1 320px" }}>
+          <MarketsSection markets={data.markets} />
         </div>
       </div>
 
