@@ -21,11 +21,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       <div>
         <nav className="nav">
           <span className="nav-brand">Crypto Research Intelligence</span>
-          <Link href="/dashboard">Home</Link>
-          <Link href="/dashboard/research">Research</Link>
-          <Link href="/dashboard/rankings">Fundamental Ranking</Link>
+          <Link href="/dashboard">Início</Link>
+          <Link href="/dashboard/research">Pesquisa</Link>
+          <Link href="/dashboard/rankings">Ranking Fundamental</Link>
           <Link href="/dashboard/kanban">Kanban</Link>
-          <Link href="/dashboard/settings">Settings</Link>
+          <Link href="/dashboard/settings">Configurações</Link>
           <LogoutButton />
         </nav>
         <main className="page">{children}</main>

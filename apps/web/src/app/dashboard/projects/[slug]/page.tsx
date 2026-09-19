@@ -44,6 +44,7 @@ interface ProjectTokenomicsRaw {
 // apps/web/src/lib/research.ts (`ProjectProfileView`/`ProjectMarketView`).
 interface ProjectProfileView {
   descriptionEn: string | null;
+  descriptionPt: string | null;
   categories: string[];
   platforms: string[];
   homepageUrl: string | null;
@@ -106,7 +107,7 @@ function Sparkline({ points }: { points: Array<{ sourceTimestamp: string; valueU
   });
 
   return (
-    <svg width={width} height={height} role="img" aria-label="TVL over time">
+    <svg width={width} height={height} role="img" aria-label="TVL ao longo do tempo">
       <polyline points={coords.join(" ")} fill="none" stroke="currentColor" strokeWidth={2} />
     </svg>
   );
@@ -247,7 +248,7 @@ function HistorySection({
         </tbody>
       </table>
 
-      <h3 style={{ marginTop: 20 }}>What Changed Since Last Research</h3>
+      <h3 style={{ marginTop: 20 }}>O Que Mudou Desde a Última Pesquisa</h3>
       {!changelog ? (
         <p>Carregando…</p>
       ) : changelog.length === 0 ? (
@@ -553,8 +554,15 @@ function ProfileSection({ profile }: { profile: ProjectProfileView | null }) {
               )}
             </li>
           </ul>
-          {profile.descriptionEn && (
-            <p style={{ fontSize: 13, marginTop: 10, lineHeight: 1.5 }}>{profile.descriptionEn}</p>
+          {(profile.descriptionPt ?? profile.descriptionEn) && (
+            <p style={{ fontSize: 13, marginTop: 10, lineHeight: 1.5 }}>
+              {profile.descriptionPt ?? profile.descriptionEn}
+            </p>
+          )}
+          {!profile.descriptionPt && profile.descriptionEn && (
+            <p style={{ color: theme.textMuted, fontSize: 11, marginTop: 4 }}>
+              Tradução indisponível — exibindo texto original em inglês.
+            </p>
           )}
           <p style={{ color: theme.textMuted, fontSize: 12, marginTop: 8 }}>
             Fonte: CoinGecko — coletado em {new Date(profile.retrievedAt).toLocaleDateString()}.
@@ -789,7 +797,7 @@ function CatalystsRisksSection() {
         </p>
       </div>
       <div style={{ ...cardStyle(), flex: "1 1 280px" }}>
-        <h3 style={{ margin: 0, fontSize: 14, color: theme.textMuted, fontWeight: 500 }}>Risks</h3>
+        <h3 style={{ margin: 0, fontSize: 14, color: theme.textMuted, fontWeight: 500 }}>Riscos</h3>
         <p style={{ color: theme.textMuted, fontSize: 13, marginTop: 8 }}>
           N/A — não modelado ainda.
         </p>
@@ -894,7 +902,7 @@ function ScoreSection({ score }: { score: FundamentalScoreView | null }) {
       <p>Confidence: {score.confidence.toFixed(0)}%</p>
       <p style={{ fontStyle: "italic" }}>Score não é recomendação financeira.</p>
 
-      <h3>Breakdown</h3>
+      <h3>Detalhamento</h3>
       <ul>
         <li>TVL Growth: {formatGroupScore(score.breakdown.groups.tvlGrowth)}</li>
         <li>Revenue Growth: {formatGroupScore(score.breakdown.groups.revenueGrowth)}</li>
@@ -1046,7 +1054,7 @@ export default function ProjectDetailPage() {
       </div>
 
       <div style={{ marginTop: 24 }}>
-        <h2>TVL over time</h2>
+        <h2>TVL ao longo do tempo</h2>
         <Sparkline points={data.tvlHistory} />
       </div>
 

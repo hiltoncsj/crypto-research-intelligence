@@ -463,6 +463,12 @@ model ProjectProfileSnapshot {
   projectId       String         @map("project_id")
   project         Project        @relation(fields: [projectId], references: [id])
   descriptionEn   String?        @map("description_en") @db.Text
+  // Sprint 17: tradução PT-BR de descriptionEn via MyMemory Translation API (real, gratuita,
+  // sem chave — api.mymemory.translated.net, ver packages/defi-data/src/translate-client.ts).
+  // Calculada uma única vez por conteúdo (mesmo gate de dedupe do resto do snapshot), nunca
+  // no momento da leitura. Null quando descriptionEn é null OU a tradução falhou (nunca
+  // fabricar texto — nesse caso a UI cai de volta para descriptionEn).
+  descriptionPt   String?        @map("description_pt") @db.Text
   categories      String[]
   platforms       String[]
   homepageUrl     String?        @map("homepage_url")

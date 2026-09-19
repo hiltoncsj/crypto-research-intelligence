@@ -71,10 +71,19 @@ export default function SettingsPage() {
     UNAVAILABLE: "badge-danger",
   };
 
+  const STATUS_LABEL: Record<string, string> = {
+    REAL: "Real",
+    NOT_CONFIGURED: "Não configurado",
+    ERROR: "Erro",
+    PARTIAL: "Parcial",
+    MOCK: "Mock",
+    UNAVAILABLE: "Indisponível",
+  };
+
   return (
     <section>
       <div className="section-label">Configurações</div>
-      <h1>API &amp; Data Sources</h1>
+      <h1>APIs e Fontes de Dados</h1>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}>
         {KNOWN_PROVIDERS.map(({ provider, name, implemented }) => {
@@ -102,13 +111,13 @@ export default function SettingsPage() {
               >
                 <strong>{name}</strong>
                 <span className={`badge ${STATUS_BADGE[status] ?? "badge"}`}>
-                  {status}
+                  {STATUS_LABEL[status] ?? status}
                   {connection?.maskedIdentifier ? ` · ${connection.maskedIdentifier}` : ""}
                 </span>
               </div>
               {connection?.lastTestedAt && (
                 <p style={{ margin: "8px 0 0", fontSize: 13 }}>
-                  Last tested: {new Date(connection.lastTestedAt).toLocaleString()}
+                  Último teste: {new Date(connection.lastTestedAt).toLocaleString()}
                 </p>
               )}
               {connection?.lastError && (
@@ -125,7 +134,7 @@ export default function SettingsPage() {
                     disabled={testingId === connection.id}
                     onClick={() => handleTest(connection.id)}
                   >
-                    {testingId === connection.id ? "Testando…" : "Test Connection"}
+                    {testingId === connection.id ? "Testando…" : "Testar Conexão"}
                   </button>
                 )}
               </div>

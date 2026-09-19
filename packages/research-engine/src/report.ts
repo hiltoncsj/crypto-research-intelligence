@@ -150,8 +150,12 @@ export async function generateProjectReport(slug: string): Promise<ProjectReport
     );
     lines.push("");
     lines.push(
-      profile.descriptionEn ? profile.descriptionEn : "_Descrição: N/A (fonte não fornece)._",
+      profile.descriptionPt ?? profile.descriptionEn ?? "_Descrição: N/A (fonte não fornece)._",
     );
+    if (!profile.descriptionPt && profile.descriptionEn) {
+      lines.push("");
+      lines.push("_(tradução indisponível — texto original em inglês)_");
+    }
     lines.push("");
     lines.push(`_Fonte: CoinGecko — coletado em ${fmtDate(profile.retrievedAt.toISOString())}._`);
   } else {

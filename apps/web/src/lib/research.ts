@@ -47,6 +47,7 @@ export interface ProjectTokenomicsRaw {
 // página do projeto, não só no Markdown baixável.
 export interface ProjectProfileView {
   descriptionEn: string | null;
+  descriptionPt: string | null;
   categories: string[];
   platforms: string[];
   homepageUrl: string | null;
@@ -126,6 +127,7 @@ export async function getProjectDashboardData(slug: string): Promise<ProjectDash
     profile: profile
       ? {
           descriptionEn: profile.descriptionEn,
+          descriptionPt: profile.descriptionPt,
           categories: profile.categories,
           platforms: profile.platforms,
           homepageUrl: profile.homepageUrl,

@@ -6,16 +6,16 @@ import { useEffect, useState } from "react";
 const LINKS = [
   {
     href: "/dashboard/research",
-    label: "Research Runs",
+    label: "Execuções de Pesquisa",
     desc: "Disparar coleta e acompanhar execuções",
   },
   {
     href: "/dashboard/rankings",
-    label: "Fundamental Ranking",
+    label: "Ranking Fundamental",
     desc: "Projetos ordenados por força fundamental",
   },
-  { href: "/dashboard/kanban", label: "Kanban", desc: "Pull System operacional do pipeline" },
-  { href: "/dashboard/settings", label: "Settings", desc: "API & Data Sources" },
+  { href: "/dashboard/kanban", label: "Kanban", desc: "Sistema Pull operacional do pipeline" },
+  { href: "/dashboard/settings", label: "Configurações", desc: "APIs e Fontes de Dados" },
 ];
 
 // Sprint 14 (Parte 18-21) — Home real: cards com dados reais de
@@ -128,10 +128,37 @@ function fmtDate(iso: string | null): string {
 }
 
 const DIVERGENCE_LABEL: Record<string, string> = {
-  POSITIVE_FUNDAMENTAL_DIVERGENCE: "Fundamentals > Market",
-  NEGATIVE_FUNDAMENTAL_DIVERGENCE: "Market > Fundamentals",
-  ALIGNED: "Aligned",
-  INSUFFICIENT_DATA: "Insufficient Data",
+  POSITIVE_FUNDAMENTAL_DIVERGENCE: "Fundamentos > Mercado",
+  NEGATIVE_FUNDAMENTAL_DIVERGENCE: "Mercado > Fundamentos",
+  ALIGNED: "Alinhado",
+  INSUFFICIENT_DATA: "Dados Insuficientes",
+};
+
+// Sprint 15/16 — labels em PT-BR para os valores brutos de categoria/status/classificação
+// (enums do Prisma/scoring-engine), exibidos nas tabelas de Catalysts/Risks/Event Intelligence.
+const EVENT_CATEGORY_LABEL: Record<string, string> = {
+  FUNDING: "Captação (Funding)",
+  SECURITY_INCIDENT: "Incidente de Segurança",
+};
+
+const RESEARCH_RUN_STATUS_LABEL: Record<string, string> = {
+  QUEUED: "Na fila",
+  RUNNING: "Em execução",
+  COMPLETED: "Concluída",
+  PARTIAL: "Parcial",
+  FAILED: "Falhou",
+  CANCELLED: "Cancelada",
+};
+
+const EVENT_IMPACT_CLASSIFICATION_LABEL: Record<string, string> = {
+  FUNDAMENTAL_EXPANSION_AFTER_EVENT: "Expansão Fundamental Após o Evento",
+  FUNDAMENTAL_CONTRACTION_AFTER_EVENT: "Contração Fundamental Após o Evento",
+  MARKET_APPRECIATION_AFTER_EVENT: "Valorização de Mercado Após o Evento",
+  MARKET_DECLINE_AFTER_EVENT: "Queda de Mercado Após o Evento",
+  MIXED: "Misto",
+  NO_CLEAR_CHANGE: "Sem Mudança Clara",
+  INSUFFICIENT_DATA: "Dados Insuficientes",
+  OVERLAPPING_EVENTS: "Eventos Sobrepostos",
 };
 
 const cardStyle = { height: "100%" } as const;
@@ -160,8 +187,8 @@ export default function DashboardPage() {
 
   return (
     <section>
-      <div className="section-label">Home</div>
-      <h1>Dashboard</h1>
+      <div className="section-label">Início</div>
+      <h1>Painel</h1>
       <p>Visão geral do Crypto Research Intelligence.</p>
 
       <div
@@ -200,7 +227,7 @@ export default function DashboardPage() {
       {view && (
         <>
           {/* Research */}
-          <h2 style={{ marginTop: 32 }}>Research</h2>
+          <h2 style={{ marginTop: 32 }}>Pesquisa</h2>
           <div
             style={{
               display: "grid",
@@ -210,21 +237,22 @@ export default function DashboardPage() {
             }}
           >
             <div className="card" style={cardStyle}>
-              <div style={{ fontSize: 12 }}>Projects Researched</div>
+              <div style={{ fontSize: 12 }}>Projetos Pesquisados</div>
               <div style={{ fontSize: 28, fontWeight: 600 }}>
                 {view.research.projectsResearched}
               </div>
             </div>
             <div className="card" style={cardStyle}>
-              <div style={{ fontSize: 12 }}>Research Runs</div>
+              <div style={{ fontSize: 12 }}>Execuções de Pesquisa</div>
               <div style={{ fontSize: 28, fontWeight: 600 }}>{view.research.researchRunsTotal}</div>
             </div>
             <div className="card" style={cardStyle}>
-              <div style={{ fontSize: 12 }}>Last Research Run</div>
+              <div style={{ fontSize: 12 }}>Última Execução de Pesquisa</div>
               {view.research.lastResearchRun ? (
                 <>
                   <div style={{ fontSize: 16, fontWeight: 600 }}>
-                    {view.research.lastResearchRun.status}
+                    {RESEARCH_RUN_STATUS_LABEL[view.research.lastResearchRun.status] ??
+                      view.research.lastResearchRun.status}
                   </div>
                   <div style={{ fontSize: 12 }}>
                     {fmtDate(
@@ -238,7 +266,7 @@ export default function DashboardPage() {
                   </div>
                 </>
               ) : (
-                <div style={{ fontSize: 13 }}>N/A — nenhuma Research Run ainda</div>
+                <div style={{ fontSize: 13 }}>N/A — nenhuma Execução de Pesquisa ainda</div>
               )}
             </div>
           </div>
@@ -257,10 +285,10 @@ export default function DashboardPage() {
             }}
           >
             {[
-              ["TVL Coverage", view.dataHealth.tvlCoverage],
-              ["Market Data Coverage", view.dataHealth.marketDataCoverage],
-              ["Revenue Coverage", view.dataHealth.revenueCoverage],
-              ["Fees Coverage", view.dataHealth.feesCoverage],
+              ["Cobertura de TVL", view.dataHealth.tvlCoverage],
+              ["Cobertura de Dados de Mercado", view.dataHealth.marketDataCoverage],
+              ["Cobertura de Revenue", view.dataHealth.revenueCoverage],
+              ["Cobertura de Fees", view.dataHealth.feesCoverage],
             ].map(([label, c]) => {
               const coverage = c as { count: number; percentage: number };
               return (
@@ -293,11 +321,11 @@ export default function DashboardPage() {
               <thead>
                 <tr style={{ textAlign: "left" }}>
                   <th>Projeto</th>
-                  <th>Fundamental Momentum</th>
+                  <th>Momentum Fundamental</th>
                   <th>TVL 30d</th>
                   <th>Revenue 30d</th>
                   <th>Market Cap 30d</th>
-                  <th>Divergence</th>
+                  <th>Divergência</th>
                 </tr>
               </thead>
               <tbody>
@@ -369,10 +397,10 @@ export default function DashboardPage() {
           )}
 
           {/* Catalysts (Sprint 15) — só contagens factuais, sem "melhor projeto" */}
-          <h2 style={{ marginTop: 32 }}>Catalysts</h2>
+          <h2 style={{ marginTop: 32 }}>Catalisadores</h2>
           <p style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
-            Eventos factuais com fonte verificável — ver limitações no Project Report (cobertura
-            hoje limitada a rodadas de captação, DefiLlama).
+            Eventos factuais com fonte verificável — ver limitações no Relatório do Projeto
+            (cobertura hoje limitada a rodadas de captação, DefiLlama).
           </p>
           <div
             style={{
@@ -382,21 +410,21 @@ export default function DashboardPage() {
             }}
           >
             <div className="card" style={cardStyle}>
-              <div style={{ fontSize: 12 }}>Upcoming</div>
+              <div style={{ fontSize: 12 }}>Futuros</div>
               <div style={{ fontSize: 24, fontWeight: 600 }}>{view.catalysts.upcoming}</div>
             </div>
             <div className="card" style={cardStyle}>
-              <div style={{ fontSize: 12 }}>Recent (30d)</div>
+              <div style={{ fontSize: 12 }}>Recentes (30d)</div>
               <div style={{ fontSize: 24, fontWeight: 600 }}>{view.catalysts.recent}</div>
             </div>
             <div className="card" style={cardStyle}>
-              <div style={{ fontSize: 12 }}>Completed</div>
+              <div style={{ fontSize: 12 }}>Concluídos</div>
               <div style={{ fontSize: 24, fontWeight: 600 }}>{view.catalysts.completed}</div>
             </div>
           </div>
 
           {/* Risks (Sprint 15) */}
-          <h2 style={{ marginTop: 32 }}>Risks</h2>
+          <h2 style={{ marginTop: 32 }}>Riscos</h2>
           <p style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
             Riscos identificados por fonte verificável (cobertura hoje limitada a incidentes de
             segurança conhecidos pela DefiLlama).
@@ -409,11 +437,11 @@ export default function DashboardPage() {
             }}
           >
             <div className="card" style={cardStyle}>
-              <div style={{ fontSize: 12 }}>Identified Risks</div>
+              <div style={{ fontSize: 12 }}>Riscos Identificados</div>
               <div style={{ fontSize: 24, fontWeight: 600 }}>{view.risks.identified}</div>
             </div>
             <div className="card" style={cardStyle}>
-              <div style={{ fontSize: 12 }}>With Historical Evidence</div>
+              <div style={{ fontSize: 12 }}>Com Evidência Histórica</div>
               <div style={{ fontSize: 24, fontWeight: 600 }}>
                 {view.risks.withHistoricalEvidence}
               </div>
@@ -421,7 +449,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Event Intelligence (Sprint 16) — associação temporal observada, nunca causalidade */}
-          <h2 style={{ marginTop: 32 }}>Event Intelligence</h2>
+          <h2 style={{ marginTop: 32 }}>Inteligência de Eventos</h2>
           <p style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
             Variação observada após o evento — associação temporal, não causalidade.
           </p>
@@ -434,20 +462,20 @@ export default function DashboardPage() {
             }}
           >
             <div className="card" style={cardStyle}>
-              <div style={{ fontSize: 12 }}>Events Analyzed</div>
+              <div style={{ fontSize: 12 }}>Eventos Analisados</div>
               <div style={{ fontSize: 24, fontWeight: 600 }}>
                 {view.eventIntelligence.analyzedCount}
               </div>
             </div>
             <div className="card" style={cardStyle}>
-              <div style={{ fontSize: 12 }}>Insufficient Data</div>
+              <div style={{ fontSize: 12 }}>Dados Insuficientes</div>
               <div style={{ fontSize: 24, fontWeight: 600 }}>
                 {view.eventIntelligence.insufficientDataCount}
               </div>
             </div>
           </div>
 
-          <h3 style={{ fontSize: 14 }}>Recent Events (30d)</h3>
+          <h3 style={{ fontSize: 14 }}>Eventos Recentes (30d)</h3>
           {view.eventIntelligence.recentEvents.length === 0 ? (
             <p style={{ fontSize: 13 }}>N/A — nenhum evento recente com data confirmada.</p>
           ) : (
@@ -471,19 +499,21 @@ export default function DashboardPage() {
                     <td>
                       <Link href={`/dashboard/projects/${e.slug}`}>{e.name}</Link>
                     </td>
-                    <td>{e.eventType}</td>
+                    <td>{EVENT_CATEGORY_LABEL[e.eventType] ?? e.eventType}</td>
                     <td>{fmtDate(e.eventDate)}</td>
                     <td>{fmtPct(e.fundamentalChange30d)}</td>
                     <td>{fmtPct(e.marketChange30d)}</td>
                     <td>{e.coveragePercent.toFixed(0)}%</td>
-                    <td>{e.classification}</td>
+                    <td>
+                      {EVENT_IMPACT_CLASSIFICATION_LABEL[e.classification] ?? e.classification}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
 
-          <h3 style={{ fontSize: 14 }}>Cross-Event Aggregation</h3>
+          <h3 style={{ fontSize: 14 }}>Agregação Entre Eventos</h3>
           <p style={{ fontSize: 12, marginTop: -8, marginBottom: 12 }}>
             Estatística descritiva sobre a amostra real observada — nunca previsão.
           </p>
@@ -496,8 +526,10 @@ export default function DashboardPage() {
           >
             {view.eventIntelligence.aggregations.map((agg) => (
               <div className="card" key={agg.category} style={cardStyle}>
-                <div style={{ fontSize: 12, marginBottom: 4 }}>{agg.category}</div>
-                <div style={{ fontSize: 12 }}>Sample size: {agg.sampleSize}</div>
+                <div style={{ fontSize: 12, marginBottom: 4 }}>
+                  {EVENT_CATEGORY_LABEL[agg.category] ?? agg.category}
+                </div>
+                <div style={{ fontSize: 12 }}>Tamanho da amostra: {agg.sampleSize}</div>
                 {agg.sampleSize === 0 ? (
                   <div style={{ fontSize: 12 }}>N/A — nenhum evento com dados suficientes.</div>
                 ) : (

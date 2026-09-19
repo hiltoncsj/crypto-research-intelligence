@@ -20,6 +20,13 @@ const RISK_LABELS: Record<"NORMAL" | "WATCH" | "BOTTLENECK" | "CRITICAL", string
   CRITICAL: "Crítico",
 };
 
+const CARD_STATUS_LABEL: Record<string, string> = {
+  READY: "Pronto",
+  IN_PROGRESS: "Em andamento",
+  BLOCKED: "Bloqueado",
+  DONE: "Concluído",
+};
+
 const COLUMN_LABELS: Record<string, string> = {
   BACKLOG: "Backlog",
   DISCOVERY: "Discovery",
@@ -477,7 +484,7 @@ export default function KanbanPage() {
                         )}
                       </div>
                       <div className="card-meta">
-                        {card.cardStatus}
+                        {CARD_STATUS_LABEL[card.cardStatus] ?? card.cardStatus}
                         {card.urgent && " · URGENTE"}
                       </div>
                       {card.cardStatus === "BLOCKED" && (

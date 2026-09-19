@@ -64,6 +64,27 @@ const STATUS_BADGE: Record<ResearchRun["status"], string> = {
 
 const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING"]);
 
+// Labels em PT-BR para os valores brutos dos enums (Prisma) exibidos diretamente na tabela.
+const STATUS_LABEL: Record<ResearchRun["status"], string> = {
+  QUEUED: "Na fila",
+  RUNNING: "Em execução",
+  COMPLETED: "Concluída",
+  PARTIAL: "Parcial",
+  FAILED: "Falhou",
+  CANCELLED: "Cancelada",
+};
+
+const MODE_LABEL: Record<ResearchRun["mode"], string> = {
+  FULL: "Completa",
+  INCREMENTAL: "Incremental",
+};
+
+const TRIGGER_LABEL: Record<ResearchRun["trigger"], string> = {
+  MANUAL: "Manual",
+  SCHEDULED: "Agendada",
+  SYSTEM: "Sistema",
+};
+
 // Só para exibição no texto do tooltip — a decisão real de "relevant" já vem pronta do servidor
 // (selection-relevance.ts, RELEVANCE_PERCENTILE_THRESHOLD). Mantido em sincronia manualmente
 // porque este é um componente client e o package research-engine não deve entrar no bundle do
@@ -192,7 +213,7 @@ export default function ResearchPage() {
 
   return (
     <section>
-      <h1>Research Runs</h1>
+      <h1>Execuções de Pesquisa</h1>
       <p>
         Cria uma Research Run (persistida em <code>research_runs</code>) e a enfileira no BullMQ — o
         Research Worker processa fora da requisição HTTP.
@@ -200,30 +221,30 @@ export default function ResearchPage() {
 
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
         <select value={mode} onChange={(e) => setMode(e.target.value as "FULL" | "INCREMENTAL")}>
-          <option value="FULL">Full</option>
+          <option value="FULL">Completa</option>
           <option value="INCREMENTAL">Incremental</option>
         </select>
         <button onClick={handleRun} disabled={creating}>
-          {creating ? "Criando…" : "Run Research"}
+          {creating ? "Criando…" : "Rodar Pesquisa"}
         </button>
       </div>
 
       <h2>Execuções</h2>
       {runs.length === 0 ? (
-        <p>Nenhuma Research Run ainda.</p>
+        <p>Nenhuma Execução de Pesquisa ainda.</p>
       ) : (
         <table className="card-lg" style={{ padding: 0, display: "table", overflow: "hidden" }}>
           <thead>
             <tr>
               <th style={cellStyle}>ID</th>
-              <th style={cellStyle}>Status</th>
-              <th style={cellStyle}>Mode</th>
-              <th style={cellStyle}>Trigger</th>
+              <th style={cellStyle}>Situação</th>
+              <th style={cellStyle}>Modo</th>
+              <th style={cellStyle}>Gatilho</th>
               <th style={cellStyle}>Duração</th>
               <th style={cellStyle}>Projetos</th>
               <th style={cellStyle}>Sucesso</th>
               <th style={cellStyle}>Falha</th>
-              <th style={cellStyle}>Suspicious</th>
+              <th style={cellStyle}>Suspeitos</th>
               <th style={cellStyle}>Erro</th>
               <th style={cellStyle}>Ação</th>
               <th style={cellStyle}>Top 10</th>
@@ -237,10 +258,12 @@ export default function ResearchPage() {
                     {run.id.slice(0, 8)}
                   </td>
                   <td style={cellStyle}>
-                    <span className={`badge ${STATUS_BADGE[run.status]}`}>{run.status}</span>
+                    <span className={`badge ${STATUS_BADGE[run.status]}`}>
+                      {STATUS_LABEL[run.status]}
+                    </span>
                   </td>
-                  <td style={cellStyle}>{run.mode}</td>
-                  <td style={cellStyle}>{run.trigger}</td>
+                  <td style={cellStyle}>{MODE_LABEL[run.mode]}</td>
+                  <td style={cellStyle}>{TRIGGER_LABEL[run.trigger]}</td>
                   <td style={cellStyle}>{formatDuration(run.startedAt, run.finishedAt)}</td>
                   <td style={cellStyle}>
                     {run.processedProjects}/{run.totalProjects}
@@ -251,7 +274,7 @@ export default function ResearchPage() {
                   <td style={cellStyle}>{run.errorMessage ?? "—"}</td>
                   <td style={cellStyle}>
                     {ACTIVE_STATUSES.has(run.status) ? (
-                      <button onClick={() => handleCancel(run.id)}>Cancel</button>
+                      <button onClick={() => handleCancel(run.id)}>Cancelar</button>
                     ) : (
                       "—"
                     )}
@@ -278,10 +301,10 @@ export default function ResearchPage() {
                             <tr>
                               <th style={cellStyle}>#</th>
                               <th style={cellStyle}>Projeto</th>
-                              <th style={cellStyle}>Priority</th>
+                              <th style={cellStyle}>Prioridade</th>
                               <th style={cellStyle}>Score</th>
-                              <th style={cellStyle}>Growth Momentum</th>
-                              <th style={cellStyle}>Capital Momentum</th>
+                              <th style={cellStyle}>Momentum de Crescimento</th>
+                              <th style={cellStyle}>Momentum de Capital</th>
                               <th style={cellStyle}>Motivo</th>
                             </tr>
                           </thead>

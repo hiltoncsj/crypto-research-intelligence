@@ -65,7 +65,7 @@ function ScoreRankingTable({
           <th style={{ padding: "12px 16px" }}>Projeto</th>
           <th style={{ padding: "12px 16px" }}>Setor</th>
           <th style={{ padding: "12px 16px" }}>{scoreLabel}</th>
-          <th style={{ padding: "12px 16px" }}>Confidence</th>
+          <th style={{ padding: "12px 16px" }}>Confiança</th>
         </tr>
       </thead>
       <tbody>
@@ -97,7 +97,7 @@ function GrowthRankingTable({ ranking }: { ranking: GrowthRankingEntry[] }) {
           <th style={{ padding: "12px 16px" }}>#</th>
           <th style={{ padding: "12px 16px" }}>Projeto</th>
           <th style={{ padding: "12px 16px" }}>Setor</th>
-          <th style={{ padding: "12px 16px" }}>Growth 30d (TVL)</th>
+          <th style={{ padding: "12px 16px" }}>Crescimento 30d (TVL)</th>
         </tr>
       </thead>
       <tbody>

@@ -1,5 +1,9 @@
 import { prisma, SnapshotSource as PrismaSnapshotSource } from "@crypto-research/database";
-import type { NormalizedMarketTicker, NormalizedProjectProfile } from "@crypto-research/defi-data";
+import {
+  translateToPortuguese,
+  type NormalizedMarketTicker,
+  type NormalizedProjectProfile,
+} from "@crypto-research/defi-data";
 
 import { logProfileEvent, logTokenMarketEvent } from "./logger";
 
@@ -76,10 +80,16 @@ export async function persistProjectProfile(
     return "unchanged";
   }
 
+  // Traduzida só quando o conteúdo muda (mesmo gate de dedupe acima) — nunca a cada leitura, para
+  // não estourar o limite gratuito da MyMemory. Falha de tradução nunca bloqueia a persistência do
+  // perfil em si: `descriptionPt` fica `null` e a UI cai de volta para `descriptionEn`.
+  const descriptionPt = await translateToPortuguese(profile.descriptionEn);
+
   await prisma.projectProfileSnapshot.create({
     data: {
       projectId,
       descriptionEn: profile.descriptionEn,
+      descriptionPt,
       categories: profile.categories,
       platforms: profile.platforms,
       homepageUrl: profile.homepageUrl,
