@@ -325,9 +325,29 @@ export async function computeEventImpact(eventId: string): Promise<EventImpactSu
   };
 }
 
+// Sprint 21 (Production Event Activation & Coverage Validation): `Promise.all` sem limite aqui
+// estourava o connection pool padrão do Prisma (5 conexões, `P2024 Timed out fetching a new
+// connection from the connection pool`) para projetos com muitos eventos reais — descoberto
+// rodando contra dados reais (Lido, 35 eventos GitHub+Snapshot), nunca reproduzido pelos testes
+// existentes porque nenhuma fixture tinha mais de 2-3 eventos por projeto. `computeEventImpact`
+// já faz várias queries concorrentes por evento, então N eventos em paralelo é N× esse número
+// de conexões simultâneas. Processar em lotes pequenos evita o esgotamento sem precisar
+// aumentar `connection_limit` na DATABASE_URL de produção. `computeEventImpact` já abre 5
+// conexões concorrentes por evento (TVL/Revenue/Fees/MarketData/AllEvents) — mesmo um lote de 2
+// eventos em paralelo já disputaria 10 conexões contra um pool de 5. Processar sequencialmente
+// (1 por vez) é a única opção segura sem depender de configuração externa.
+const EVENT_IMPACT_BATCH_SIZE = 1;
+
 export async function getEventImpactsForProject(projectId: string): Promise<EventImpactSummary[]> {
   const events = await getAllEvents(projectId);
-  const impacts = await Promise.all(events.map((e) => computeEventImpact(e.id)));
+  const impacts: (EventImpactSummary | null)[] = [];
+
+  for (let i = 0; i < events.length; i += EVENT_IMPACT_BATCH_SIZE) {
+    const batch = events.slice(i, i + EVENT_IMPACT_BATCH_SIZE);
+    const batchImpacts = await Promise.all(batch.map((e) => computeEventImpact(e.id)));
+    impacts.push(...batchImpacts);
+  }
+
   return impacts.filter((i): i is EventImpactSummary => i !== null);
 }
 

@@ -143,7 +143,21 @@ Fontes estruturadas (Snapshot/FundingRound/`/hacks`/Listing-Delisting/TokenUnloc
 "mainnet" no título permanece `GOVERNANCE`. Mecanismo de reclassificação de eventos GitHub já
 persistidos (`reclassifyExistingGithubEvents`, script `npm run reclassify-events`) — idempotente,
 nunca toca fontes estruturadas. Ver `SPRINT_20_IMPLEMENTATION_REPORT.md` para evidência completa
-(423 testes passando, 0 falhando).
+(423 testes passando, 0 falhando). O Sprint 21 validou o fluxo completo contra dados 100% reais
+pela primeira vez — 4 projetos DeFi reais (Aave V3, Uniswap V4, Compound V3, Lido) com
+`githubRepo`/`snapshotSpace` verificados ao vivo (não inferidos), rodados pelo pipeline real
+(não fixture): **1.244 eventos reais** persistidos (85 GitHub Releases + 1.159 propostas
+Snapshot), idempotência confirmada em 3 execuções completas. Achado principal: as 12 regras da
+Classification Engine tiveram **0% de match em dados reais** (todos os 85 releases GitHub reais
+caíram em `OTHER`) — não é um bug, é uma descoberta honesta de que a GitHub Releases API
+devolve changelogs técnicos terse, não anúncios estilo press-release; nenhuma regra foi alterada
+sem evidência (0 falso positivo, 0 falso negativo confirmado). A validação também encontrou e
+corrigiu um bug real de infraestrutura: `getEventImpactsForProject`
+(`packages/research-engine/src/event-impact-engine.ts`) estourava o connection pool padrão do
+Prisma (5 conexões) com `Promise.all` sem limite sobre muitos eventos de um projeto — só
+reproduzível com volume real (Lido, 35 eventos); corrigido com processamento sequencial
+(`EVENT_IMPACT_BATCH_SIZE = 1`) + teste de regressão. Ver `SPRINT_21_IMPLEMENTATION_REPORT.md`
+para a auditoria completa (424 testes passando, 0 falhando).
 
 Monorepo `apps/web` mais `packages/{database,defi-data,research-engine,scoring-engine,queue,shared}`
 

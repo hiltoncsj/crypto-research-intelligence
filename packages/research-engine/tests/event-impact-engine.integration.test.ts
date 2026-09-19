@@ -320,4 +320,40 @@ describe("event-impact-engine (Prisma, integração real)", () => {
       expect(aggregation.tvlChange30d.mean).toBeNull();
     });
   });
+
+  // Sprint 21 (Production Event Activation & Coverage Validation): teste de regressão para um
+  // bug real descoberto rodando contra dados reais — `getEventImpactsForProject` com muitos
+  // eventos de um mesmo projeto estourava o connection pool padrão do Prisma (5 conexões,
+  // `P2024 Timed out fetching a new connection from the connection pool`), porque cada
+  // `computeEventImpact` já abre 5 conexões concorrentes e o `Promise.all` externo não tinha
+  // nenhum limite de lote. Reproduzido em produção com Lido (35 eventos GitHub+Snapshot reais);
+  // nenhuma fixture de teste anterior tinha eventos suficientes para expor isso. Corrigido com
+  // processamento sequencial (`EVENT_IMPACT_BATCH_SIZE = 1`) em `event-impact-engine.ts`.
+  describe("getEventImpactsForProject — muitos eventos (regressão connection pool, Sprint 21)", () => {
+    it("processa 10 eventos do mesmo projeto sem esgotar o connection pool", async () => {
+      const projectId = await seedProject();
+      const now = Date.now();
+
+      for (let i = 0; i < 10; i += 1) {
+        await prisma.researchEvent.create({
+          data: {
+            projectId,
+            kind: "CATALYST",
+            category: "FUNDING",
+            title: `Evento ${i}`,
+            eventDate: new Date(now - i * DAY_MS),
+            source: "TEST",
+            sourceId: `regression-${i}`,
+            impact: "ECOSYSTEM",
+            status: "COMPLETED",
+            confidence: "HIGH",
+            retrievedAt: new Date(now),
+          },
+        });
+      }
+
+      const impacts = await getEventImpactsForProject(projectId);
+      expect(impacts).toHaveLength(10);
+    });
+  });
 });

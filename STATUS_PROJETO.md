@@ -589,6 +589,41 @@ reclassify-events`) — idempotente, nunca toca fontes estruturadas, nunca alter
 
 ---
 
+## 2.22 Sprint 21 — Production Event Activation & Coverage Validation (implementado)
+
+Ver `SPRINT_21_IMPLEMENTATION_REPORT.md` para os detalhes completos. Resumo:
+
+- **Primeira validação end-to-end com dados 100% reais.** 4 projetos DeFi reais (Aave V3,
+  Uniswap V4, Compound V3, Lido) — `defillamaId` real via pipeline real, `githubRepo`/
+  `snapshotSpace` verificados ao vivo (GitHub API + Snapshot GraphQL) antes de curar, nunca
+  inferidos por nome.
+- **1.244 eventos reais persistidos**: 85 GitHub Releases + 1.159 propostas Snapshot.
+  Idempotência confirmada em 3 execuções completas do pipeline (0 duplicações).
+- **Achado principal sobre a Classification Engine**: as 12 regras do Sprint 20 tiveram **0% de
+  match em produção** — todos os 85 releases GitHub reais caíram em `OTHER`/`LOW`. Auditoria
+  manual de 100% da amostra (85/85) confirmou: 83 `CORRECT_OTHER`, 2 `AMBIGUOUS`, 0 falso
+  positivo, 0 falso negativo confirmado. Causa raiz identificada: GitHub Releases devolve
+  changelogs técnicos terse (`"v1.19.4"`, `"Compound v2.31"`), não anúncios estilo
+  press-release que as regras (corretamente conservadoras) exigem. Nenhuma regra foi alterada
+  sem evidência real.
+- Snapshot Governance confirmado 100% confiável com dados reais — 62 das 1.159 propostas reais
+  contêm "mainnet"/"upgrade"/"staking" no título e **todas** permaneceram `GOVERNANCE`/`HIGH`,
+  nunca contaminadas pela engine textual (que nunca é chamada para eventos Snapshot).
+- **Bug real de infraestrutura encontrado e corrigido**: `getEventImpactsForProject`
+  (`packages/research-engine/src/event-impact-engine.ts`) estourava o connection pool padrão do
+  Prisma (5 conexões) com `Promise.all` sem limite — só reproduzível com volume real (Lido, 35
+  eventos). Corrigido com processamento sequencial + teste de regressão. Nenhuma fixture
+  anterior tinha eventos suficientes para expor isso.
+- Event Impact validado com 10 eventos reais de Lido (todos `OVERLAPPING_EVENTS`, resultado
+  correto dado o volume real de propostas próximas no tempo). Dashboard validado parcialmente
+  (escopo confirmado por query direta — 35 eventos reais na janela de 30d — mas a chamada
+  completa da função foi interrompida por limite de memória do ambiente local, não do código).
+- Resultado: **424 testes passando, 0 falhando** (423 + 1 regressão nova), typecheck/lint/build
+  limpos, 0 findings de segurança. **Nenhuma nova categoria/regra adicionada** — Sprint 21 foi
+  deliberadamente sobre validação, não sobre expansão de features.
+
+---
+
 ## 3. O que falta
 
 ### 3.1 Fora de escopo (deliberadamente, confirmado ausente no código)
