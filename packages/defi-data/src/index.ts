@@ -4,3 +4,6 @@ export * from "./http-client";
 export * from "./client";
 export * from "./coingecko-client";
 export * from "./translate-client";
+export * from "./external-identity";
+export * from "./github-client";
+export * from "./snapshot-client";

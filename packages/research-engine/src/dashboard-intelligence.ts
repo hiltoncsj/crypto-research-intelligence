@@ -365,12 +365,16 @@ const RECENT_EVENTS_WINDOW_DAYS = 30;
 // CATALYSTS_RISKS_SOURCE_AUDIT.md seção 7, item 1). Sprint 18: TOKEN_UNLOCK adicionado — PRONTO
 // mas inerte na prática enquanto nenhuma key DEFILLAMA_PRO estiver configurada (a agregação
 // simplesmente nunca encontra eventos dessa categoria até lá, sem erro).
+// Sprint 19: GOVERNANCE (Snapshot) e OTHER (GitHub Releases — categoria sempre conservadora,
+// ver events-repository.ts) adicionados.
 const KNOWN_EVENT_CATEGORIES = [
   "FUNDING",
   "SECURITY_INCIDENT",
   "LISTING",
   "DELISTING",
   "TOKEN_UNLOCK",
+  "GOVERNANCE",
+  "OTHER",
 ] as const;
 
 export async function getEventIntelligenceOverview(): Promise<EventIntelligenceOverview> {

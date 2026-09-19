@@ -1,4 +1,5 @@
 import { prisma } from "@crypto-research/database";
+import { isValidGithubRepo, isValidSnapshotSpace } from "@crypto-research/defi-data";
 import {
   calculateWindowMetrics,
   getLatestProjectProfile,
@@ -23,6 +24,11 @@ export interface ProjectIdentification {
   chains: string[];
   discoveredAt: string | null;
   discoverySource: string | null;
+  // Sprint 19 (External Identity Mapping): curadoria manual, nunca inferida — ver
+  // EXTERNAL_IDENTITY_ARCHITECTURE.md. `null` = a fonte correspondente (GitHub Releases/
+  // Snapshot Governance) nunca é chamada para este projeto.
+  githubRepo: string | null;
+  snapshotSpace: string | null;
 }
 
 export interface ProjectClassification {
@@ -149,6 +155,8 @@ export async function getProjectDashboardData(slug: string): Promise<ProjectDash
       chains: project.projectChains.map((pc) => pc.chain.name),
       discoveredAt: project.discoveredAt?.toISOString() ?? null,
       discoverySource: project.discoverySource,
+      githubRepo: project.githubRepo,
+      snapshotSpace: project.snapshotSpace,
     },
     classification: {
       segment: null,
@@ -184,4 +192,43 @@ export async function listProjectsWithData(): Promise<Array<{ slug: string; name
     orderBy: { name: "asc" },
   });
   return projects;
+}
+
+// Sprint 19 (External Identity Mapping): único caminho de escrita para githubRepo/
+// snapshotSpace — curadoria manual, nunca inferida por nome (ver
+// EXTERNAL_IDENTITY_ARCHITECTURE.md). Reaproveita os MESMOS validadores anti-SSRF que os
+// clients de packages/defi-data usam antes de montar uma URL — defesa em profundidade, não
+// confiamos apenas na validação daqui.
+export class InvalidExternalIdentityError extends Error {}
+export class ProjectNotFoundError extends Error {}
+
+export async function updateProjectExternalIdentity(
+  slug: string,
+  input: { githubRepo?: string | null; snapshotSpace?: string | null },
+): Promise<void> {
+  const data: { githubRepo?: string | null; snapshotSpace?: string | null } = {};
+
+  if (input.githubRepo !== undefined) {
+    if (input.githubRepo !== null && !isValidGithubRepo(input.githubRepo)) {
+      throw new InvalidExternalIdentityError(
+        'githubRepo inválido — formato esperado "owner/repo" (sem URL/protocolo).',
+      );
+    }
+    data.githubRepo = input.githubRepo;
+  }
+
+  if (input.snapshotSpace !== undefined) {
+    if (input.snapshotSpace !== null && !isValidSnapshotSpace(input.snapshotSpace)) {
+      throw new InvalidExternalIdentityError(
+        'snapshotSpace inválido — formato esperado de slug simples (ex.: "ens.eth"), sem URL.',
+      );
+    }
+    data.snapshotSpace = input.snapshotSpace;
+  }
+
+  try {
+    await prisma.project.update({ where: { slug }, data });
+  } catch {
+    throw new ProjectNotFoundError(`Projeto "${slug}" não encontrado.`);
+  }
 }

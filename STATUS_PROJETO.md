@@ -505,6 +505,49 @@ YYYY-MM-DD)`) — permite um novo evento se o mesmo mercado for delistado e reli
 
 ---
 
+## 2.20 Sprint 19 — External Identity Mapping & Governance Intelligence (implementado)
+
+Ver `SPRINT_19_IMPLEMENTATION_REPORT.md` e `EXTERNAL_IDENTITY_ARCHITECTURE.md` para os
+detalhes completos. Resumo:
+
+- **`Project.githubRepo`/`Project.snapshotSpace`** (colunas opcionais diretas em `Project`,
+  Opção A escolhida sobre uma tabela `ProjectExternalIdentity` genérica — abstração prematura
+  para só 2 identificadores 1:1). Preenchidos SOMENTE por curadoria manual via
+  `PATCH /api/projects/[slug]` (UI mínima de 2 campos na página do projeto) — nunca inferidos
+  por matching de nome. Validação anti-SSRF em dois pontos independentes
+  (`packages/defi-data/src/external-identity.ts`): na API de curadoria e de novo em cada client,
+  antes de montar qualquer URL.
+- **GitHub Releases** (`packages/defi-data/src/github-client.ts`) — API oficial keyless,
+  paginada (até 500 releases/projeto), confirmada AO VIVO contra
+  `api.github.com/repos/aave/aave-v3-core/releases`. Vira Catalyst categoria SEMPRE `OTHER`
+  (nunca `MAINNET`/`PROTOCOL_UPGRADE` sem evidência textual clara — regra explícita da sprint),
+  `confidence` `MEDIUM` (publicada) ou `LOW` (draft).
+- **Snapshot Governance** (`packages/defi-data/src/snapshot-client.ts`) — GraphQL oficial
+  keyless, paginado, confirmado AO VIVO contra o space real `ens.eth` (2 propostas reais
+  recuperadas com todos os campos). Vira Catalyst categoria `GOVERNANCE`, `confidence` `HIGH`
+  (fonte primária estruturada), `status` mapeado diretamente do `state` cru da fonte
+  (`pending`/`active`/`closed`→`SCHEDULED`/`ONGOING`/`COMPLETED`, outro→`UNKNOWN`).
+- Ambos conectados ao pipeline (`pipeline.ts`, condicional a `githubRepo`/`snapshotSpace`
+  configurado, cada um isolado por `try/catch` independente) e ao Dashboard
+  (`KNOWN_EVENT_CATEGORIES` estendido com `GOVERNANCE`/`OTHER`). Nenhuma mudança necessária em
+  `EventImpactEngine`/`report.ts` (já genéricos por categoria, confirmado por leitura direta).
+- **Correção de 2 dívidas de teste pré-existentes** (pedido explícito da sprint): bug de path em
+  `apps/web/tests/setup.ts` (`../../.env` → `../../../.env`, corrigindo 12 testes que falhavam
+  com `DATABASE_URL not found`) e cleanup incompleto em `discovery.integration.test.ts` (4
+  tabelas faltando no `afterAll`: `MarketDataSnapshot`/`ProjectProfileSnapshot`/`TokenMarket`/
+  `ResearchEvent`, adicionadas desde os Sprints 12/13/15 e nunca incluídas na limpeza).
+- **`npm run build` executado pela primeira vez** (pendência explícita apontada no
+  `SPRINT_17_IMPLEMENTATION_REPORT.md`) — passou limpo, 1 warning pré-existente não relacionado
+  (dependência opcional do BullMQ).
+- Resultado: **396 testes passando, 0 falhando**, em todos os 7 workspaces — zero falhas
+  pré-existentes remanescentes.
+- **Fora desta sprint** (deliberado): `PROTOCOL_UPGRADE`/`MAINNET`/`TESTNET`/`TOKEN_MIGRATION`/
+  `TOKEN_BURN`/etc. via interpretação de texto de release/proposta (exigiria inferir significado
+  sem evidência clara, proibido explicitamente); `TOKEN_UNLOCK` não tocado (segue pronto,
+  inativo, Sprint 18).
+
+---
+
 ## 3. O que falta
 
 ### 3.1 Fora de escopo (deliberadamente, confirmado ausente no código)

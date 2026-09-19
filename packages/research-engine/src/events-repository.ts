@@ -8,8 +8,10 @@ import {
   type ResearchEventCategory,
 } from "@crypto-research/database";
 import type {
+  NormalizedGithubRelease,
   NormalizedMarketTicker,
   NormalizedSecurityIncident,
+  NormalizedSnapshotProposal,
   NormalizedTokenUnlockEvent,
 } from "@crypto-research/defi-data";
 
@@ -359,6 +361,172 @@ export async function collectTokenUnlockRisks(
     logEventsEvent("events.token_unlocks_failed", {
       slug,
       projectId,
+      error: err instanceof Error ? err.message : "Erro desconhecido",
+    });
+  }
+}
+
+// ------------------------------------------------------------------------------------------
+// Catalyst — GitHub Releases (Sprint 19). Só chamado quando `Project.githubRepo` foi curado
+// manualmente (ver EXTERNAL_IDENTITY_ARCHITECTURE.md) — nunca inferido por nome.
+//
+// Categoria SEMPRE `OTHER`: um release não permite, por si só, inferir com confiança se é
+// PROTOCOL_UPGRADE/MAINNET/TESTNET/PRODUCT_LAUNCH (regra explícita da spec — "não classificar
+// automaticamente qualquer release como MAINNET/PROTOCOL_UPGRADE... nunca inventar significado
+// sem evidência"). `confidence` é `MEDIUM` para releases publicadas (fonte primária oficial,
+// mas classificação semântica ambígua) e `LOW` para drafts (o evento pode nem representar uma
+// mudança real ainda — só um rascunho).
+// ------------------------------------------------------------------------------------------
+
+export async function persistGithubReleaseCatalysts(
+  projectId: string,
+  releases: NormalizedGithubRelease[],
+): Promise<EventsPersistResult> {
+  let created = 0;
+  let updated = 0;
+
+  for (const r of releases) {
+    const sourceId = String(r.releaseId);
+    const data = {
+      kind: ResearchEventKind.CATALYST,
+      category: "OTHER" as ResearchEventCategory,
+      title: r.title,
+      description: null,
+      eventDate: new Date(r.eventDate),
+      publishedAt: r.publishedAt ? new Date(r.publishedAt) : null,
+      source: "GITHUB",
+      sourceUrl: r.url,
+      impact: ResearchEventImpactDimension.ECOSYSTEM,
+      status: r.draft ? ResearchEventStatus.UNKNOWN : ResearchEventStatus.COMPLETED,
+      confidence: r.draft ? ResearchEventConfidence.LOW : ResearchEventConfidence.MEDIUM,
+      retrievedAt: new Date(r.retrievedAt),
+    };
+
+    const existing = await prisma.researchEvent.findUnique({
+      where: { research_event_dedupe: { projectId, source: "GITHUB", sourceId } },
+    });
+    if (existing) {
+      await prisma.researchEvent.update({ where: { id: existing.id }, data });
+      updated += 1;
+    } else {
+      await prisma.researchEvent.create({ data: { ...data, projectId, sourceId } });
+      created += 1;
+    }
+  }
+
+  return { created, updated, skipped: 0 };
+}
+
+export async function collectGithubReleaseCatalysts(
+  projectId: string,
+  slug: string,
+  githubRepo: string | null,
+  releases: NormalizedGithubRelease[] | null,
+): Promise<void> {
+  if (!githubRepo) {
+    logEventsEvent("events.github_releases_skipped_no_mapping", { slug, projectId });
+    return;
+  }
+  try {
+    const result = await persistGithubReleaseCatalysts(projectId, releases ?? []);
+    logEventsEvent("events.github_releases_collected", { slug, projectId, githubRepo, ...result });
+  } catch (err) {
+    logEventsEvent("events.github_releases_failed", {
+      slug,
+      projectId,
+      githubRepo,
+      error: err instanceof Error ? err.message : "Erro desconhecido",
+    });
+  }
+}
+
+// ------------------------------------------------------------------------------------------
+// Catalyst — Snapshot Governance (Sprint 19). Só chamado quando `Project.snapshotSpace` foi
+// curado manualmente. `status` mapeado do `state` cru da fonte ("pending"/"active"/"closed") —
+// qualquer valor não reconhecido vira `UNKNOWN`, nunca uma suposição (regra explícita: "não
+// transformar automaticamente uma proposta em COMPLETED apenas porque existe").
+// ------------------------------------------------------------------------------------------
+
+function mapSnapshotState(
+  state: string,
+): (typeof ResearchEventStatus)[keyof typeof ResearchEventStatus] {
+  switch (state) {
+    case "pending":
+      return ResearchEventStatus.SCHEDULED;
+    case "active":
+      return ResearchEventStatus.ONGOING;
+    case "closed":
+      return ResearchEventStatus.COMPLETED;
+    default:
+      return ResearchEventStatus.UNKNOWN;
+  }
+}
+
+export async function persistSnapshotGovernanceCatalysts(
+  projectId: string,
+  proposals: NormalizedSnapshotProposal[],
+): Promise<EventsPersistResult> {
+  let created = 0;
+  let updated = 0;
+
+  for (const p of proposals) {
+    const sourceId = p.proposalId;
+    const data = {
+      kind: ResearchEventKind.CATALYST,
+      category: "GOVERNANCE" as ResearchEventCategory,
+      title: p.title,
+      description: null,
+      eventDate: new Date(p.eventDate),
+      publishedAt: new Date(p.startAt),
+      source: "SNAPSHOT",
+      sourceUrl: p.url,
+      impact: ResearchEventImpactDimension.GOVERNANCE,
+      status: mapSnapshotState(p.state),
+      // Fonte primária oficial (GraphQL do próprio Snapshot) e status mapeado diretamente do
+      // campo `state` da fonte, sem interpretação — mesmo padrão de confidence HIGH usado para
+      // SECURITY_INCIDENT/FUNDING (fontes estruturadas primárias já validadas ao vivo).
+      confidence: ResearchEventConfidence.HIGH,
+      retrievedAt: new Date(p.retrievedAt),
+    };
+
+    const existing = await prisma.researchEvent.findUnique({
+      where: { research_event_dedupe: { projectId, source: "SNAPSHOT", sourceId } },
+    });
+    if (existing) {
+      await prisma.researchEvent.update({ where: { id: existing.id }, data });
+      updated += 1;
+    } else {
+      await prisma.researchEvent.create({ data: { ...data, projectId, sourceId } });
+      created += 1;
+    }
+  }
+
+  return { created, updated, skipped: 0 };
+}
+
+export async function collectSnapshotGovernanceCatalysts(
+  projectId: string,
+  slug: string,
+  snapshotSpace: string | null,
+  proposals: NormalizedSnapshotProposal[] | null,
+): Promise<void> {
+  if (!snapshotSpace) {
+    logEventsEvent("events.snapshot_proposals_skipped_no_mapping", { slug, projectId });
+    return;
+  }
+  try {
+    const result = await persistSnapshotGovernanceCatalysts(projectId, proposals ?? []);
+    logEventsEvent("events.snapshot_proposals_collected", {
+      slug,
+      projectId,
+      snapshotSpace,
+      ...result,
+    });
+  } catch (err) {
+    logEventsEvent("events.snapshot_proposals_failed", {
+      slug,
+      projectId,
+      snapshotSpace,
       error: err instanceof Error ? err.message : "Erro desconhecido",
     });
   }

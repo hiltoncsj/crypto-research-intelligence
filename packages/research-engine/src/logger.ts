@@ -132,7 +132,13 @@ export type EventsEvent =
   | "events.listing_catalysts_failed"
   | "events.token_unlocks_collected"
   | "events.token_unlocks_failed"
-  | "events.token_unlocks_skipped_no_api_key";
+  | "events.token_unlocks_skipped_no_api_key"
+  | "events.github_releases_collected"
+  | "events.github_releases_failed"
+  | "events.github_releases_skipped_no_mapping"
+  | "events.snapshot_proposals_collected"
+  | "events.snapshot_proposals_failed"
+  | "events.snapshot_proposals_skipped_no_mapping";
 
 export function logEventsEvent(event: EventsEvent, data: Record<string, unknown> = {}): void {
   console.log(JSON.stringify({ event, timestamp: new Date().toISOString(), ...data }));

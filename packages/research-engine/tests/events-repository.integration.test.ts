@@ -1,19 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "@crypto-research/database";
 import type {
+  NormalizedGithubRelease,
   NormalizedMarketTicker,
   NormalizedSecurityIncident,
+  NormalizedSnapshotProposal,
   NormalizedTokenUnlockEvent,
 } from "@crypto-research/defi-data";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
   collectFundingCatalysts,
+  collectGithubReleaseCatalysts,
   collectSecurityIncidentRisks,
+  collectSnapshotGovernanceCatalysts,
   getCatalysts,
   getRisks,
   persistFundingCatalysts,
+  persistGithubReleaseCatalysts,
   persistSecurityIncidentRisks,
+  persistSnapshotGovernanceCatalysts,
   persistTokenMarketListingCatalysts,
   persistTokenUnlockRisks,
 } from "../src/events-repository";
@@ -350,6 +356,178 @@ describe("events-repository (Prisma, integração real)", () => {
       const { id: projectId, defillamaId } = await seedProject("114");
       const result = await persistTokenUnlockRisks(projectId, defillamaId, []);
       expect(result).toEqual({ created: 0, updated: 0, skipped: 0 });
+    });
+  });
+
+  // Sprint 19 — GitHub Releases. Fixture consistente com a estrutura confirmada ao vivo
+  // (packages/defi-data/tests/adapter.test.ts).
+  describe("persistGithubReleaseCatalysts", () => {
+    function release(overrides: Partial<NormalizedGithubRelease> = {}): NormalizedGithubRelease {
+      return {
+        source: "GITHUB",
+        retrievedAt: "2026-09-19T00:00:00.000Z",
+        githubRepo: "aave/aave-v3-core",
+        releaseId: 162360098,
+        tagName: "v1.19.4",
+        title: "v1.19.4",
+        url: "https://github.com/aave/aave-v3-core/releases/tag/v1.19.4",
+        eventDate: "2024-06-25T17:57:27Z",
+        publishedAt: "2024-06-25T17:57:27Z",
+        draft: false,
+        prerelease: false,
+        ...overrides,
+      };
+    }
+
+    it("cria um Catalyst OTHER (categoria sempre conservadora) com confidence MEDIUM para release publicada", async () => {
+      const { id: projectId } = await seedProject();
+      const result = await persistGithubReleaseCatalysts(projectId, [release()]);
+      expect(result.created).toBe(1);
+
+      const catalysts = await getCatalysts(projectId);
+      expect(catalysts).toHaveLength(1);
+      expect(catalysts[0]?.category).toBe("OTHER");
+      expect(catalysts[0]?.kind).toBe("CATALYST");
+      expect(catalysts[0]?.confidence).toBe("MEDIUM");
+      expect(catalysts[0]?.status).toBe("COMPLETED");
+    });
+
+    it("release draft: confidence LOW, status UNKNOWN — nunca COMPLETED sem publishedAt", async () => {
+      const { id: projectId } = await seedProject();
+      await persistGithubReleaseCatalysts(projectId, [
+        release({ draft: true, publishedAt: null, releaseId: 999 }),
+      ]);
+      const catalysts = await getCatalysts(projectId);
+      expect(catalysts[0]?.confidence).toBe("LOW");
+      expect(catalysts[0]?.status).toBe("UNKNOWN");
+    });
+
+    it("sourceId determinístico = releaseId — idempotente, nunca duplica", async () => {
+      const { id: projectId } = await seedProject();
+      await persistGithubReleaseCatalysts(projectId, [release()]);
+      const second = await persistGithubReleaseCatalysts(projectId, [release()]);
+      expect(second.created).toBe(0);
+      expect(second.updated).toBe(1);
+      expect(await getCatalysts(projectId)).toHaveLength(1);
+    });
+
+    it("releases diferentes (releaseId distinto): dois eventos distintos", async () => {
+      const { id: projectId } = await seedProject();
+      const result = await persistGithubReleaseCatalysts(projectId, [
+        release({ releaseId: 1, tagName: "v1" }),
+        release({ releaseId: 2, tagName: "v2" }),
+      ]);
+      expect(result.created).toBe(2);
+      expect(await getCatalysts(projectId)).toHaveLength(2);
+    });
+
+    it("dois projetos diferentes com a mesma release (mesmo releaseId): não colidem", async () => {
+      const { id: projectA } = await seedProject();
+      const { id: projectB } = await seedProject();
+      await persistGithubReleaseCatalysts(projectA, [release()]);
+      await persistGithubReleaseCatalysts(projectB, [release()]);
+      expect(await getCatalysts(projectA)).toHaveLength(1);
+      expect(await getCatalysts(projectB)).toHaveLength(1);
+    });
+  });
+
+  describe("collectGithubReleaseCatalysts", () => {
+    const minimalRelease: NormalizedGithubRelease = {
+      source: "GITHUB",
+      retrievedAt: "2026-09-19T00:00:00.000Z",
+      githubRepo: "x/y",
+      releaseId: 1,
+      tagName: "v1",
+      title: "v1",
+      url: "https://github.com/x/y/releases/tag/v1",
+      eventDate: "2026-01-01T00:00:00Z",
+      publishedAt: "2026-01-01T00:00:00Z",
+      draft: false,
+      prerelease: false,
+    };
+
+    it("sem githubRepo (null): skip, nunca chama persist, nunca lança", async () => {
+      const { id: projectId } = await seedProject();
+      await expect(
+        collectGithubReleaseCatalysts(projectId, "some-slug", null, [minimalRelease]),
+      ).resolves.toBeUndefined();
+      expect(await getCatalysts(projectId)).toHaveLength(0);
+    });
+  });
+
+  // Sprint 19 — Snapshot Governance. Fixture consistente com a resposta real confirmada ao vivo.
+  describe("persistSnapshotGovernanceCatalysts", () => {
+    function proposal(
+      overrides: Partial<NormalizedSnapshotProposal> = {},
+    ): NormalizedSnapshotProposal {
+      return {
+        source: "SNAPSHOT",
+        retrievedAt: "2026-09-19T00:00:00.000Z",
+        snapshotSpace: "ens.eth",
+        proposalId: "0x943e585d1a4996525c5c7d229401d604ea56fe08c2c9c615c44f048ba42487b7",
+        title: "[7.1] [Social] SPP3: Marketplace RFP",
+        url: "https://snapshot.box/#/s:ens.eth/proposal/0x943e",
+        eventDate: "2026-07-12T00:00:00.000Z",
+        startAt: "2026-07-12T00:00:00.000Z",
+        endAt: "2026-07-19T00:00:00.000Z",
+        state: "closed",
+        ...overrides,
+      };
+    }
+
+    it("cria um Catalyst GOVERNANCE com confidence HIGH (fonte primária estruturada)", async () => {
+      const { id: projectId } = await seedProject();
+      const result = await persistSnapshotGovernanceCatalysts(projectId, [proposal()]);
+      expect(result.created).toBe(1);
+
+      const catalysts = await getCatalysts(projectId);
+      expect(catalysts).toHaveLength(1);
+      expect(catalysts[0]?.category).toBe("GOVERNANCE");
+      expect(catalysts[0]?.confidence).toBe("HIGH");
+      expect(catalysts[0]?.status).toBe("COMPLETED"); // state "closed" -> COMPLETED
+    });
+
+    it("mapeia state 'active' para ONGOING e 'pending' para SCHEDULED, nunca inventa", async () => {
+      const { id: projectId } = await seedProject();
+      await persistSnapshotGovernanceCatalysts(projectId, [
+        proposal({ proposalId: "0xactive", state: "active" }),
+        proposal({ proposalId: "0xpending", state: "pending" }),
+        proposal({ proposalId: "0xweird", state: "some-unknown-state" }),
+      ]);
+      const catalysts = await getCatalysts(projectId);
+      const byId = new Map(catalysts.map((c) => [c.title, c.status]));
+      expect(catalysts.find((c) => c.status === "ONGOING")).toBeDefined();
+      expect(catalysts.find((c) => c.status === "SCHEDULED")).toBeDefined();
+      expect(catalysts.find((c) => c.status === "UNKNOWN")).toBeDefined();
+      void byId;
+    });
+
+    it("sourceId = proposalId (já estável na fonte) — idempotente, nunca duplica", async () => {
+      const { id: projectId } = await seedProject();
+      await persistSnapshotGovernanceCatalysts(projectId, [proposal()]);
+      const second = await persistSnapshotGovernanceCatalysts(projectId, [proposal()]);
+      expect(second.created).toBe(0);
+      expect(second.updated).toBe(1);
+      expect(await getCatalysts(projectId)).toHaveLength(1);
+    });
+
+    it("propostas diferentes: eventos distintos", async () => {
+      const { id: projectId } = await seedProject();
+      const result = await persistSnapshotGovernanceCatalysts(projectId, [
+        proposal({ proposalId: "0xa" }),
+        proposal({ proposalId: "0xb" }),
+      ]);
+      expect(result.created).toBe(2);
+    });
+  });
+
+  describe("collectSnapshotGovernanceCatalysts", () => {
+    it("sem snapshotSpace (null): skip, nunca chama persist, nunca lança", async () => {
+      const { id: projectId } = await seedProject();
+      await expect(
+        collectSnapshotGovernanceCatalysts(projectId, "some-slug", null, []),
+      ).resolves.toBeUndefined();
+      expect(await getCatalysts(projectId)).toHaveLength(0);
     });
   });
 });

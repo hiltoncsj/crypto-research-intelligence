@@ -23,6 +23,8 @@ interface ProjectIdentification {
   chains: string[];
   discoveredAt: string | null;
   discoverySource: string | null;
+  githubRepo: string | null;
+  snapshotSpace: string | null;
 }
 
 interface ProjectClassification {
@@ -683,6 +685,90 @@ function IdentificationSection({ identification }: { identification: ProjectIden
   );
 }
 
+// Sprint 19 (External Identity Mapping): formulário mínimo de curadoria manual — só 2 campos,
+// nunca inferidos por nome (regra explícita do documento de especificação). Sem UI de permissões
+// separada: a própria sessão autenticada (única no sistema, NextAuth Credentials) já é o
+// controle de acesso — ver PATCH /api/projects/[slug]/route.ts.
+function ExternalIdentitySection({
+  slug,
+  identification,
+  onSaved,
+}: {
+  slug: string;
+  identification: ProjectIdentification;
+  onSaved: (next: ProjectIdentification) => void;
+}) {
+  const [githubRepo, setGithubRepo] = useState(identification.githubRepo ?? "");
+  const [snapshotSpace, setSnapshotSpace] = useState(identification.snapshotSpace ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${slug}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          githubRepo: githubRepo.trim() === "" ? null : githubRepo.trim(),
+          snapshotSpace: snapshotSpace.trim() === "" ? null : snapshotSpace.trim(),
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error ?? "Erro ao salvar.");
+        return;
+      }
+      onSaved(body.project.identification);
+    } catch {
+      setError("Erro de rede ao salvar.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={cardStyle()}>
+      <h3 style={{ margin: 0, fontSize: 14, color: theme.textMuted, fontWeight: 500 }}>
+        Identidade Externa (curadoria manual)
+      </h3>
+      <p style={{ fontSize: 12, color: theme.textMuted, marginTop: 6 }}>
+        Nunca inferido por nome — só habilita a coleta de GitHub Releases / Snapshot Governance
+        quando preenchido explicitamente aqui.
+      </p>
+      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+        <label style={{ fontSize: 12 }}>
+          GitHub repo (formato &quot;owner/repo&quot;)
+          <input
+            value={githubRepo}
+            onChange={(e) => setGithubRepo(e.target.value)}
+            placeholder="ex.: aave/aave-v3-core"
+            style={{ display: "block", width: "100%", marginTop: 4, padding: 6, fontSize: 13 }}
+          />
+        </label>
+        <label style={{ fontSize: 12 }}>
+          Snapshot space
+          <input
+            value={snapshotSpace}
+            onChange={(e) => setSnapshotSpace(e.target.value)}
+            placeholder="ex.: ens.eth"
+            style={{ display: "block", width: "100%", marginTop: 4, padding: 6, fontSize: 13 }}
+          />
+        </label>
+        {error && <p style={{ color: "#c0392b", fontSize: 12, margin: 0 }}>{error}</p>}
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={{ padding: "6px 12px", fontSize: 13 }}
+        >
+          {saving ? "Salvando..." : "Salvar"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Sprint 10 (Parte 5): Classificação — nunca inventa Emerging/Established (critério não
 // implementado); mostra Research Priority quando o projeto já passou por uma seleção Top 10.
 function ClassificationSection({ classification }: { classification: ProjectClassification }) {
@@ -1069,6 +1155,13 @@ export default function ProjectDetailPage() {
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
         <div style={{ flex: "1 1 280px" }}>
           <IdentificationSection identification={data.identification} />
+        </div>
+        <div style={{ flex: "1 1 280px" }}>
+          <ExternalIdentitySection
+            slug={params.slug}
+            identification={data.identification}
+            onSaved={(next) => setData({ ...data, identification: next })}
+          />
         </div>
         <div style={{ flex: "1 1 280px" }}>
           <ClassificationSection classification={data.classification} />

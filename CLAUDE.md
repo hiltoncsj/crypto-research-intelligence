@@ -117,7 +117,21 @@ usar agora"), foi implementado como Risk **PRONTO, NÃO ATIVADO**: `getTokenUnlo
 nunca executa, zero custo. A estrutura do payload foi montada a partir de documentação pública,
 nunca validada contra uma resposta real — validar antes de confiar no resultado quando ativado
 (ver `SPRINT_17_IMPLEMENTATION_REPORT.md`). Demais 12 categorias de Catalyst e 17 de Risk seguem
-sem fonte adequada — `NOT_IMPLEMENTED` documentado, nunca fabricado.
+sem fonte adequada — `NOT_IMPLEMENTED` documentado, nunca fabricado. O Sprint 19 implementou
+**External Identity Mapping** (`EXTERNAL_IDENTITY_ARCHITECTURE.md`) — `Project.githubRepo`/
+`Project.snapshotSpace`, colunas opcionais preenchidas SÓ por curadoria manual via
+`PATCH /api/projects/[slug]` (UI mínima na página do projeto), nunca inferidas por nome — e
+ligou as duas fontes que ficavam bloqueadas por falta desse mapeamento: **GitHub Releases**
+(`packages/defi-data/src/github-client.ts`, Catalyst sempre `OTHER` — categoria nunca inferida
+como MAINNET/PROTOCOL_UPGRADE sem evidência) e **Snapshot Governance**
+(`packages/defi-data/src/snapshot-client.ts`, Catalyst `GOVERNANCE`, status mapeado do `state`
+cru da fonte). Ambas confirmadas AO VIVO nesta sprint (diferente de `TOKEN_UNLOCK`, que segue
+pronto e inativo — não tocado). Validação anti-SSRF em dois pontos independentes
+(`packages/defi-data/src/external-identity.ts`) antes de qualquer URL ser montada. O Sprint 19
+também corrigiu 2 dívidas de teste pré-existentes (path errado de `.env` em `apps/web/tests/
+setup.ts`; cleanup incompleto em `discovery.integration.test.ts`) e rodou `npm run build` pela
+primeira vez — ver `SPRINT_19_IMPLEMENTATION_REPORT.md` para evidência completa (396 testes
+passando, 0 falhando).
 
 Monorepo `apps/web` mais `packages/{database,defi-data,research-engine,scoring-engine,queue,shared}`
 

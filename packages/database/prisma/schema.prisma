@@ -88,6 +88,17 @@ model Project {
   // "aave-v2") legitimamente compartilham o mesmo token/gecko_id — descoberto em produção
   // (2026-09-17) quando o upsert de "aave" colidia com o `coinGeckoId` já gravado por "aave-v2".
   coinGeckoId String?       @map("coin_gecko_id")
+  // Sprint 19 (External Identity Mapping): curadoria MANUAL, nunca inferida por nome (ver
+  // EXTERNAL_IDENTITY_ARCHITECTURE.md) — formato "owner/repo" (sem URL/protocolo), validado por
+  // regex na camada de API antes de persistir. Decisão de arquitetura: campo direto em `Project`
+  // (Opção A), mesmo padrão de `coinGeckoId`/`defillamaId` acima — uma tabela
+  // `ProjectExternalIdentity` separada (Opção B) foi avaliada e descartada por abstração
+  // prematura para só 2 identificadores opcionais. `null` = GitHub Releases nunca é chamado
+  // para este projeto (nunca tratado como erro).
+  githubRepo String? @map("github_repo")
+  // Sprint 19: curadoria MANUAL, formato "space.eth" ou slug equivalente (sem URL), validado por
+  // regex. `null` = Snapshot GraphQL nunca é chamado para este projeto.
+  snapshotSpace String? @map("snapshot_space")
   status      ProjectStatus @default(DISCOVERED)
   // Sprint 8 (Project Discovery): preenchidos só quando o Project nasce do mecanismo de
   // descoberta automática (packages/research-engine/src/discovery.ts), nunca sobrescritos em

@@ -1,5 +1,6 @@
 import type {
   NormalizedFundingRound,
+  NormalizedGithubRelease,
   NormalizedMarketDataPoint,
   NormalizedMarketTicker,
   NormalizedProjectProfile,
@@ -7,6 +8,7 @@ import type {
   NormalizedProtocolSummary,
   NormalizedProtocolTvlHistory,
   NormalizedSecurityIncident,
+  NormalizedSnapshotProposal,
   NormalizedTimeSeriesPoint,
   NormalizedTokenSummary,
   NormalizedTokenSupply,
@@ -17,6 +19,8 @@ import type {
   RawDefiLlamaFeesSummary,
   RawDefiLlamaHack,
   RawDefiLlamaProtocol,
+  RawGithubRelease,
+  RawSnapshotProposal,
 } from "./types";
 
 // Sprint 2 (Fase 12): Adapter — External Response → Normalized Model. Não grava no banco
@@ -473,4 +477,78 @@ export function normalizeTokenUnlocks(
       };
     })
     .filter((item): item is NormalizedTokenUnlockEvent => item !== null);
+}
+
+/**
+ * Sprint 19 — GitHub Releases (`githubRepo` já validado pela camada de curadoria antes de
+ * chegar aqui, ver `external-identity.ts`). `eventDate` usa `published_at` quando disponível
+ * (a data real de publicação); um release só existe como `draft` sem `published_at` — nesse
+ * caso caímos para `created_at` e isso fica visível via `publishedAt: null` no resultado
+ * (o chamador usa isso para reduzir `confidence`, nunca fabrica uma data de publicação).
+ */
+export function normalizeGithubReleases(
+  raw: unknown,
+  githubRepo: string,
+  retrievedAt: string,
+): NormalizedGithubRelease[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((item): NormalizedGithubRelease | null => {
+      const r = item as RawGithubRelease;
+      if (typeof r?.id !== "number" || typeof r?.tag_name !== "string") return null;
+      if (typeof r?.html_url !== "string" || typeof r?.created_at !== "string") return null;
+
+      const publishedAt = nonEmptyString(r.published_at ?? null);
+      return {
+        source: "GITHUB",
+        retrievedAt,
+        githubRepo,
+        releaseId: r.id,
+        tagName: r.tag_name,
+        title: nonEmptyString(r.name) ?? r.tag_name,
+        url: r.html_url,
+        eventDate: publishedAt ?? r.created_at,
+        publishedAt,
+        draft: r.draft === true,
+        prerelease: r.prerelease === true,
+      };
+    })
+    .filter((item): item is NormalizedGithubRelease => item !== null);
+}
+
+/**
+ * Sprint 19 — Snapshot GraphQL proposals (`snapshotSpace` já validado pela camada de
+ * curadoria). `state` é repassado cru da fonte, nunca reinterpretado aqui — o mapeamento para
+ * `ResearchEventStatus` acontece na camada de persistência (events-repository.ts), única em
+ * conhecer o enum de destino.
+ */
+export function normalizeSnapshotProposals(
+  raw: unknown,
+  snapshotSpace: string,
+  retrievedAt: string,
+): NormalizedSnapshotProposal[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((item): NormalizedSnapshotProposal | null => {
+      const p = item as RawSnapshotProposal;
+      if (typeof p?.id !== "string" || typeof p?.title !== "string") return null;
+      if (typeof p?.created !== "number" || typeof p?.state !== "string") return null;
+      if (typeof p?.start !== "number" || typeof p?.end !== "number") return null;
+
+      return {
+        source: "SNAPSHOT",
+        retrievedAt,
+        snapshotSpace,
+        proposalId: p.id,
+        title: p.title,
+        url: nonEmptyString(p.link ?? null),
+        eventDate: unixSecondsToIso(p.created),
+        startAt: unixSecondsToIso(p.start),
+        endAt: unixSecondsToIso(p.end),
+        state: p.state,
+      };
+    })
+    .filter((item): item is NormalizedSnapshotProposal => item !== null);
 }

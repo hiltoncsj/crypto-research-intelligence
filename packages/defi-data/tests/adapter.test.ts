@@ -6,8 +6,10 @@ import {
   normalizeCoinGeckoTickers,
   normalizeFeesSummary,
   normalizeFundingRounds,
+  normalizeGithubReleases,
   normalizeProtocol,
   normalizeProtocolList,
+  normalizeSnapshotProposals,
   normalizeTokenSummary,
   normalizeTokenUnlocks,
   normalizeTvlHistory,
@@ -520,5 +522,124 @@ describe("normalizeTokenUnlocks (Sprint 18 — PRONTO, não ativado)", () => {
     const result = normalizeTokenUnlocks(raw, "114", retrievedAt);
     expect(result).toHaveLength(1);
     expect(result[0]?.tokenAmount).toBeNull();
+  });
+});
+
+// Sprint 19 — fixture baseada em GET https://api.github.com/repos/aave/aave-v3-core/releases,
+// confirmada AO VIVO em 2026-09-19 (ver comentário de RawGithubRelease em types.ts) — diferente
+// de TOKEN_UNLOCK, esta estrutura foi validada contra uma resposta real, não só documentação.
+describe("normalizeGithubReleases (Sprint 19 — validado ao vivo)", () => {
+  const retrievedAt = "2026-09-19T00:00:00.000Z";
+
+  it("normaliza um release publicado real (campos confirmados via chamada ao vivo)", () => {
+    const raw = [
+      {
+        id: 162360098,
+        tag_name: "v1.19.4",
+        name: "v1.19.4",
+        html_url: "https://github.com/aave/aave-v3-core/releases/tag/v1.19.4",
+        draft: false,
+        prerelease: false,
+        created_at: "2024-06-25T17:50:00Z",
+        published_at: "2024-06-25T17:57:27Z",
+        body: "release notes",
+      },
+    ];
+    const result = normalizeGithubReleases(raw, "aave/aave-v3-core", retrievedAt);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.releaseId).toBe(162360098);
+    expect(result[0]?.tagName).toBe("v1.19.4");
+    expect(result[0]?.eventDate).toBe("2024-06-25T17:57:27Z");
+    expect(result[0]?.publishedAt).not.toBeNull();
+    expect(result[0]?.draft).toBe(false);
+  });
+
+  it("release draft sem published_at: eventDate cai para created_at, publishedAt fica null", () => {
+    const raw = [
+      {
+        id: 1,
+        tag_name: "v0.0.1-draft",
+        name: null,
+        html_url: "https://github.com/x/y/releases/tag/v0.0.1-draft",
+        draft: true,
+        prerelease: false,
+        created_at: "2026-01-01T00:00:00Z",
+        published_at: null,
+        body: null,
+      },
+    ];
+    const result = normalizeGithubReleases(raw, "x/y", retrievedAt);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.publishedAt).toBeNull();
+    expect(result[0]?.eventDate).toBe("2026-01-01T00:00:00Z");
+    expect(result[0]?.title).toBe("v0.0.1-draft"); // sem `name`, cai para tag_name
+    expect(result[0]?.draft).toBe(true);
+  });
+
+  it("descarta itens malformados (sem id/tag_name/html_url/created_at), nunca lança", () => {
+    const raw = [{ tag_name: "missing-id" }, { id: "not-a-number", tag_name: "x" }, null];
+    expect(normalizeGithubReleases(raw, "x/y", retrievedAt)).toEqual([]);
+  });
+
+  it("payload não-array: retorna vazio, nunca lança", () => {
+    expect(normalizeGithubReleases(null, "x/y", retrievedAt)).toEqual([]);
+    expect(normalizeGithubReleases({}, "x/y", retrievedAt)).toEqual([]);
+  });
+});
+
+// Sprint 19 — fixture baseada na resposta REAL do Snapshot GraphQL para o space "ens.eth"
+// (POST hub.snapshot.org/graphql, confirmado ao vivo em 2026-09-19).
+describe("normalizeSnapshotProposals (Sprint 19 — validado ao vivo)", () => {
+  const retrievedAt = "2026-09-19T00:00:00.000Z";
+
+  it("normaliza uma proposta real (campos confirmados via chamada ao vivo)", () => {
+    const raw = [
+      {
+        id: "0x943e585d1a4996525c5c7d229401d604ea56fe08c2c9c615c44f048ba42487b7",
+        title: "[7.1] [Social] SPP3: Marketplace RFP",
+        body: "# Summary...",
+        choices: ["For", "Against", "Abstain"],
+        state: "closed",
+        start: 1783988115,
+        end: 1784420115,
+        created: 1783988115,
+        author: "0x1D5460F896521aD685Ea4c3F2c679Ec0b6806359",
+        link: "https://snapshot.box/#/s:ens.eth/proposal/0x943e585d1a4996525c5c7d229401d604ea56fe08c2c9c615c44f048ba42487b7",
+        space: { id: "ens.eth", name: "ENS" },
+      },
+    ];
+    const result = normalizeSnapshotProposals(raw, "ens.eth", retrievedAt);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.proposalId).toBe(raw[0]?.id);
+    expect(result[0]?.state).toBe("closed");
+    expect(result[0]?.title).toContain("SPP3");
+    expect(result[0]?.url).toContain("snapshot.box");
+  });
+
+  it("descarta itens malformados (sem id/title/created/state/start/end), nunca lança", () => {
+    const raw = [{ title: "missing id and dates" }, null, { id: "x", title: "y" }];
+    expect(normalizeSnapshotProposals(raw, "ens.eth", retrievedAt)).toEqual([]);
+  });
+
+  it("payload não-array: retorna vazio, nunca lança", () => {
+    expect(normalizeSnapshotProposals(null, "ens.eth", retrievedAt)).toEqual([]);
+    expect(normalizeSnapshotProposals("garbage", "ens.eth", retrievedAt)).toEqual([]);
+  });
+
+  it("state desconhecido é repassado cru, nunca reinterpretado pelo normalizador", () => {
+    const raw = [
+      {
+        id: "0xabc",
+        title: "t",
+        state: "some-future-state",
+        start: 1,
+        end: 2,
+        created: 3,
+        author: null,
+        link: null,
+      },
+    ];
+    const result = normalizeSnapshotProposals(raw, "ens.eth", retrievedAt);
+    expect(result[0]?.state).toBe("some-future-state");
   });
 });

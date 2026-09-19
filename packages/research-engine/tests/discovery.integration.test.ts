@@ -28,6 +28,17 @@ describe.skipIf(!online)("discoverProjects (Prisma, integração real)", () => {
     // sido tocados por outra suíte em execuções anteriores desta mesma base de dados.
     await prisma.kanbanCard.deleteMany({ where: { projectId: { in: createdProjectIds } } });
     await prisma.projectChain.deleteMany({ where: { projectId: { in: createdProjectIds } } });
+    // Sprint 19: MarketDataSnapshot (Sprint 12), ProjectProfileSnapshot/TokenMarket (Sprint 13)
+    // e ResearchEvent (Sprint 15) foram adicionados depois deste teste e nunca entraram nesta
+    // lista de cleanup — causa raiz do `Foreign key constraint violated:
+    // market_data_snapshots_project_id_fkey` que fazia o afterAll falhar (os testes em si
+    // sempre passaram; só o cleanup quebrava, deixando projetos órfãos no banco entre runs).
+    await prisma.marketDataSnapshot.deleteMany({ where: { projectId: { in: createdProjectIds } } });
+    await prisma.projectProfileSnapshot.deleteMany({
+      where: { projectId: { in: createdProjectIds } },
+    });
+    await prisma.tokenMarket.deleteMany({ where: { projectId: { in: createdProjectIds } } });
+    await prisma.researchEvent.deleteMany({ where: { projectId: { in: createdProjectIds } } });
     await prisma.tvlSnapshot.deleteMany({ where: { projectId: { in: createdProjectIds } } });
     await prisma.revenueSnapshot.deleteMany({ where: { projectId: { in: createdProjectIds } } });
     await prisma.feeSnapshot.deleteMany({ where: { projectId: { in: createdProjectIds } } });

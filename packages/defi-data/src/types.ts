@@ -310,3 +310,68 @@ export interface NormalizedTokenUnlockEvent {
   category: string | null;
   description: string | null;
 }
+
+// Sprint 19 (External Identity Mapping & Governance Intelligence): GitHub Releases — confirmado
+// ao vivo (GET /repos/aave/aave-v3-core/releases, 2026-09-19: id, tag_name, name, html_url,
+// draft, prerelease, created_at, published_at, body todos presentes). Ao contrário de
+// TOKEN_UNLOCK, esta estrutura foi VALIDADA contra uma resposta real, não só documentação.
+export interface RawGithubRelease {
+  id: number;
+  tag_name: string;
+  name: string | null;
+  html_url: string;
+  draft: boolean;
+  prerelease: boolean;
+  created_at: string;
+  published_at: string | null;
+  body: string | null;
+}
+
+// Categoria NUNCA é inferida aqui (ver Parte 4 do documento de especificação do Sprint 19) —
+// normalizeGithubReleases sempre marca `category: null`, deixando a decisão para o coletor
+// (Risk/events-repository) mapear para `OTHER` sempre, de propósito conservador: um release
+// pode ser qualquer coisa (patch, hotfix, doc release) — classificar como PROTOCOL_UPGRADE/
+// MAINNET sem evidência textual explícita seria "inventar significado sem evidência".
+export interface NormalizedGithubRelease {
+  source: "GITHUB";
+  retrievedAt: string;
+  githubRepo: string; // "owner/repo", já validado antes de chegar aqui
+  releaseId: number; // sourceId determinístico — nunca aleatório
+  tagName: string;
+  title: string;
+  url: string;
+  eventDate: string; // ISO — published_at, com fallback para created_at (ver normalizador)
+  publishedAt: string | null; // null quando o release nunca foi "published" (só draft)
+  draft: boolean;
+  prerelease: boolean;
+}
+
+// Sprint 19: Snapshot GraphQL — confirmado ao vivo (POST hub.snapshot.org/graphql, space
+// "ens.eth", 2026-09-19: id, title, body, choices, state, start, end, created, author, snapshot,
+// link, space{id,name} todos presentes; state observado = "closed"; "active"/"pending" são
+// documentados oficialmente para o mesmo campo).
+export interface RawSnapshotProposal {
+  id: string;
+  title: string;
+  body: string | null;
+  state: string; // "pending" | "active" | "closed", conforme observado/documentado
+  start: number; // unix seconds
+  end: number; // unix seconds
+  created: number; // unix seconds
+  author: string | null;
+  link: string | null;
+  space?: { id: string; name?: string | null } | null;
+}
+
+export interface NormalizedSnapshotProposal {
+  source: "SNAPSHOT";
+  retrievedAt: string;
+  snapshotSpace: string;
+  proposalId: string; // sourceId determinístico — já um hash estável da própria fonte
+  title: string;
+  url: string | null;
+  eventDate: string; // ISO — `created` (data de criação da proposta, sempre presente)
+  startAt: string; // ISO — `start` (início da votação)
+  endAt: string; // ISO — `end` (fim da votação)
+  state: string; // repassado cru — o normalizador NUNCA inventa um estado
+}

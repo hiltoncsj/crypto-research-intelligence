@@ -1,9 +1,11 @@
 import { prisma } from "@crypto-research/database";
 import {
   getCoinMarketData,
+  getGithubReleases,
   getHacks,
   getProtocolFeesOrRevenue,
   getProtocolTvlHistory,
+  getSnapshotProposals,
   getTokenUnlocks,
   normalizeCoinGeckoProfile,
   normalizeCoinGeckoTickers,
@@ -20,7 +22,9 @@ import {
 } from "./capital-score-repository";
 import {
   collectFundingCatalysts,
+  collectGithubReleaseCatalysts,
   collectSecurityIncidentRisks,
+  collectSnapshotGovernanceCatalysts,
   collectTokenMarketListingCatalysts,
   collectTokenUnlockRisks,
 } from "./events-repository";
@@ -323,6 +327,56 @@ export async function runPipelineForProject(
       }
     } else if (!defillamaProApiKey) {
       logEventsEvent("events.token_unlocks_skipped_no_api_key", { slug, projectId: project.id });
+    }
+
+    // Sprint 19 (External Identity Mapping & Governance Intelligence): GitHub Releases e
+    // Snapshot Governance só são chamados quando o projeto tem `githubRepo`/`snapshotSpace`
+    // curados manualmente (nunca inferidos por nome — ver EXTERNAL_IDENTITY_ARCHITECTURE.md).
+    // Cada fonte é isolada (try/catch independente) — uma falhando nunca impede a outra nem o
+    // resto do pipeline, mesmo padrão do bloco TOKEN_UNLOCK acima.
+    if (project.githubRepo) {
+      try {
+        const releasesResult = await getGithubReleases(project.githubRepo);
+        await collectGithubReleaseCatalysts(
+          project.id,
+          slug,
+          project.githubRepo,
+          releasesResult.normalized,
+        );
+      } catch (err) {
+        logEventsEvent("events.github_releases_failed", {
+          slug,
+          projectId: project.id,
+          githubRepo: project.githubRepo,
+          error: err instanceof Error ? err.message : "Erro desconhecido",
+        });
+      }
+    } else {
+      logEventsEvent("events.github_releases_skipped_no_mapping", { slug, projectId: project.id });
+    }
+
+    if (project.snapshotSpace) {
+      try {
+        const proposalsResult = await getSnapshotProposals(project.snapshotSpace);
+        await collectSnapshotGovernanceCatalysts(
+          project.id,
+          slug,
+          project.snapshotSpace,
+          proposalsResult.normalized,
+        );
+      } catch (err) {
+        logEventsEvent("events.snapshot_proposals_failed", {
+          slug,
+          projectId: project.id,
+          snapshotSpace: project.snapshotSpace,
+          error: err instanceof Error ? err.message : "Erro desconhecido",
+        });
+      }
+    } else {
+      logEventsEvent("events.snapshot_proposals_skipped_no_mapping", {
+        slug,
+        projectId: project.id,
+      });
     }
 
     const tvlPersist = await persistSnapshotSeries(
