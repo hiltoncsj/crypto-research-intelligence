@@ -22,6 +22,7 @@ import {
   persistSnapshotGovernanceCatalysts,
   persistTokenMarketListingCatalysts,
   persistTokenUnlockRisks,
+  reclassifyExistingGithubEvents,
 } from "../src/events-repository";
 import type { TokenMarketKey } from "../src/profile-repository";
 
@@ -370,6 +371,7 @@ describe("events-repository (Prisma, integração real)", () => {
         releaseId: 162360098,
         tagName: "v1.19.4",
         title: "v1.19.4",
+        body: null,
         url: "https://github.com/aave/aave-v3-core/releases/tag/v1.19.4",
         eventDate: "2024-06-25T17:57:27Z",
         publishedAt: "2024-06-25T17:57:27Z",
@@ -379,26 +381,62 @@ describe("events-repository (Prisma, integração real)", () => {
       };
     }
 
-    it("cria um Catalyst OTHER (categoria sempre conservadora) com confidence MEDIUM para release publicada", async () => {
+    it("título sem evidência de regra vira Catalyst OTHER (classificação real, via a engine), confidence LOW", async () => {
       const { id: projectId } = await seedProject();
       const result = await persistGithubReleaseCatalysts(projectId, [release()]);
       expect(result.created).toBe(1);
+      expect(result.classification.otherCount).toBe(1);
 
       const catalysts = await getCatalysts(projectId);
       expect(catalysts).toHaveLength(1);
       expect(catalysts[0]?.category).toBe("OTHER");
       expect(catalysts[0]?.kind).toBe("CATALYST");
-      expect(catalysts[0]?.confidence).toBe("MEDIUM");
+      expect(catalysts[0]?.confidence).toBe("LOW");
       expect(catalysts[0]?.status).toBe("COMPLETED");
     });
 
-    it("release draft: confidence LOW, status UNKNOWN — nunca COMPLETED sem publishedAt", async () => {
+    it("Sprint 20 — título com evidência explícita é classificado como MAINNET/HIGH, com ruleId e evidence persistidos", async () => {
+      const { id: projectId } = await seedProject();
+      const result = await persistGithubReleaseCatalysts(projectId, [
+        release({ title: "Mainnet is now live", releaseId: 555 }),
+      ]);
+      expect(result.classification.ruleUsage["mainnet-launch-v1"]).toBe(1);
+
+      const catalysts = await getCatalysts(projectId);
+      expect(catalysts[0]?.category).toBe("MAINNET");
+      expect(catalysts[0]?.confidence).toBe("HIGH");
+    });
+
+    it("Sprint 20 — 'Preparing for mainnet' NÃO vira MAINNET (regra de conservadorismo, Fase 8)", async () => {
       const { id: projectId } = await seedProject();
       await persistGithubReleaseCatalysts(projectId, [
-        release({ draft: true, publishedAt: null, releaseId: 999 }),
+        release({ title: "Preparing for mainnet", releaseId: 556 }),
       ]);
       const catalysts = await getCatalysts(projectId);
-      expect(catalysts[0]?.confidence).toBe("LOW");
+      expect(catalysts[0]?.category).toBe("OTHER");
+    });
+
+    it("Sprint 20 — classificação lê o body do release, não só o title", async () => {
+      const { id: projectId } = await seedProject();
+      await persistGithubReleaseCatalysts(projectId, [
+        release({
+          title: "v2.0.0",
+          body: "This release includes: protocol upgrade successfully deployed to production.",
+          releaseId: 557,
+        }),
+      ]);
+      const catalysts = await getCatalysts(projectId);
+      expect(catalysts[0]?.category).toBe("PROTOCOL_UPGRADE");
+    });
+
+    it("release draft: confidence LOW, status UNKNOWN — nunca COMPLETED sem publishedAt, mesmo com título classificável", async () => {
+      const { id: projectId } = await seedProject();
+      await persistGithubReleaseCatalysts(projectId, [
+        release({ draft: true, publishedAt: null, releaseId: 999, title: "Mainnet is now live" }),
+      ]);
+      const catalysts = await getCatalysts(projectId);
+      expect(catalysts[0]?.category).toBe("MAINNET"); // categoria ainda reflete o texto
+      expect(catalysts[0]?.confidence).toBe("LOW"); // mas confidence é forçada por ser draft
       expect(catalysts[0]?.status).toBe("UNKNOWN");
     });
 
@@ -439,6 +477,7 @@ describe("events-repository (Prisma, integração real)", () => {
       releaseId: 1,
       tagName: "v1",
       title: "v1",
+      body: null,
       url: "https://github.com/x/y/releases/tag/v1",
       eventDate: "2026-01-01T00:00:00Z",
       publishedAt: "2026-01-01T00:00:00Z",
@@ -528,6 +567,92 @@ describe("events-repository (Prisma, integração real)", () => {
         collectSnapshotGovernanceCatalysts(projectId, "some-slug", null, []),
       ).resolves.toBeUndefined();
       expect(await getCatalysts(projectId)).toHaveLength(0);
+    });
+  });
+
+  // Sprint 20 (Fase 10 — Reclassificação de eventos existentes).
+  describe("reclassifyExistingGithubEvents", () => {
+    it("reclassifica um evento GITHUB existente sem mudar sourceId/eventDate/retrievedAt", async () => {
+      const { id: projectId } = await seedProject();
+      // Simula um evento persistido ANTES do Sprint 20 (Sprint 19: sempre OTHER, sem
+      // classificationMethod) com um título que a engine atual reconheceria.
+      const before = await prisma.researchEvent.create({
+        data: {
+          projectId,
+          kind: "CATALYST",
+          category: "OTHER",
+          title: "Mainnet is now live",
+          eventDate: new Date("2026-01-01T00:00:00.000Z"),
+          source: "GITHUB",
+          sourceId: "12345",
+          impact: "ECOSYSTEM",
+          status: "COMPLETED",
+          confidence: "MEDIUM",
+          retrievedAt: new Date("2026-01-02T00:00:00.000Z"),
+        },
+      });
+
+      const result = await reclassifyExistingGithubEvents(projectId);
+      expect(result.scanned).toBe(1);
+      expect(result.reclassified).toBe(1);
+
+      const after = await prisma.researchEvent.findUnique({ where: { id: before.id } });
+      expect(after?.category).toBe("MAINNET");
+      expect(after?.classificationMethod).toBe("RULE");
+      expect(after?.classificationRuleId).toBe("mainnet-launch-v1");
+      // Nunca alterados:
+      expect(after?.sourceId).toBe("12345");
+      expect(after?.eventDate?.toISOString()).toBe("2026-01-01T00:00:00.000Z");
+      expect(after?.retrievedAt.toISOString()).toBe("2026-01-02T00:00:00.000Z");
+    });
+
+    it("idempotente — rodar duas vezes não altera nada na segunda vez", async () => {
+      const { id: projectId } = await seedProject();
+      await prisma.researchEvent.create({
+        data: {
+          projectId,
+          kind: "CATALYST",
+          category: "OTHER",
+          title: "Protocol upgrade successfully deployed",
+          eventDate: new Date(),
+          source: "GITHUB",
+          sourceId: "999",
+          impact: "ECOSYSTEM",
+          status: "COMPLETED",
+          confidence: "MEDIUM",
+          retrievedAt: new Date(),
+        },
+      });
+
+      const first = await reclassifyExistingGithubEvents(projectId);
+      expect(first.reclassified).toBe(1);
+      const second = await reclassifyExistingGithubEvents(projectId);
+      expect(second.reclassified).toBe(0);
+      expect(second.unchanged).toBe(1);
+
+      const events = await getCatalysts(projectId);
+      expect(events).toHaveLength(1); // nunca duplica
+    });
+
+    it("NUNCA toca eventos de fontes estruturadas (ex.: FUNDING)", async () => {
+      const { id: projectId } = await seedProject();
+      await prisma.fundingRound.create({
+        data: {
+          projectId,
+          roundType: "SEED",
+          amountUsd: 1_000_000,
+          raisedAt: new Date(),
+          sourceTimestamp: new Date(),
+          retrievedAt: new Date(),
+        },
+      });
+      await persistFundingCatalysts(projectId);
+
+      const result = await reclassifyExistingGithubEvents(projectId);
+      expect(result.scanned).toBe(0); // filtro source:"GITHUB" nunca pega FUNDING
+
+      const catalysts = await getCatalysts(projectId);
+      expect(catalysts[0]?.category).toBe("FUNDING"); // intocado
     });
   });
 });

@@ -548,6 +548,47 @@ detalhes completos. Resumo:
 
 ---
 
+## 2.21 Sprint 20 — Auditable Event Classification Engine (implementado)
+
+Ver `SPRINT_20_IMPLEMENTATION_REPORT.md` e `EVENT_CLASSIFICATION_ARCHITECTURE.md` para os
+detalhes completos. Resumo:
+
+- Até o Sprint 19, todo evento do GitHub Releases virava Catalyst `OTHER` sempre. O Sprint 20
+  substitui isso por uma engine determinística
+  (`packages/scoring-engine/src/event-classification.ts`, `classifyEvent`) — 12 categorias
+  (`MAINNET`, `TESTNET`, `PROTOCOL_UPGRADE`, `TOKEN_MIGRATION`, `TOKEN_BURN`, `TOKEN_BUYBACK`,
+  `STAKING`, `NEW_CHAIN`, `ECOSYSTEM_EXPANSION`, `PRODUCT_LAUNCH`, `INTEGRATION`,
+  `PARTNERSHIP`), regras conservadoras baseadas em regex verbo+ação (nunca
+  `text.includes("palavra-chave")` isolado — "Preparing for mainnet" nunca vira `MAINNET`,
+  testado explicitamente). Nenhum LLM, nenhuma IA — `FUTURE_LLM` existe só como valor reservado
+  no enum, nunca usado.
+- **Schema**: `ResearchEvent` ganhou 3 campos nullable —
+  `classificationMethod`/`classificationRuleId`/`classificationEvidence` — e um novo enum
+  `ResearchEventClassificationMethod` (`STRUCTURED_SOURCE`/`RULE`/`MANUAL`/`FUTURE_LLM`). O
+  campo `confidence` já existente foi reaproveitado como a confiança da classificação (nenhum
+  campo novo separado para isso).
+- Fontes ESTRUTURADAS (Snapshot/FundingRound/DefiLlama `/hacks`/diff de `TokenMarket`/DefiLlama
+  Pro emissions) marcadas `STRUCTURED_SOURCE` e **nunca passam pela engine** — confirmado por
+  teste: uma proposta Snapshot com "mainnet" no título continua `GOVERNANCE`.
+- GitHub Releases (`persistGithubReleaseCatalysts`) agora chama `classifyEvent` de verdade sobre
+  título+corpo do release (`NormalizedGithubRelease.body`, novo campo — usado só para
+  classificar, nunca persistido em `ResearchEvent.description`). Releases draft sempre recebem
+  `confidence: LOW`/`status: UNKNOWN` independente da categoria classificada.
+- Mecanismo de reclassificação (`reclassifyExistingGithubEvents`, script `npm run
+reclassify-events`) — idempotente, nunca toca fontes estruturadas, nunca altera
+  `sourceId`/`eventDate`/`publishedAt`/`retrievedAt`. Limitação documentada: só tem o `title`
+  disponível (o `body` nunca foi persistido), então reclassificação de eventos antigos é menos
+  precisa que a classificação original.
+- Dashboard (`KNOWN_EVENT_CATEGORIES`) e leitura de eventos (`getCatalysts`/`getRisks`)
+  estendidos para expor as novas categorias e os campos de classificação (auditoria via API,
+  sem poluir a tabela do Project Report).
+- Resultado: **423 testes passando, 0 falhando** (27 novos: 21 da engine pura + 6 de
+  persistência/reclassificação), typecheck/lint/build limpos, 0 findings de segurança (ReDoS
+  auditado — regex simples sem quantificadores aninhados; XSS auditado — nenhum
+  `dangerouslySetInnerHTML` no app).
+
+---
+
 ## 3. O que falta
 
 ### 3.1 Fora de escopo (deliberadamente, confirmado ausente no código)

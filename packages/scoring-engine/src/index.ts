@@ -9,3 +9,4 @@ export * from "./capital-score";
 export * from "./priority";
 export * from "./fundamental-intelligence";
 export * from "./event-impact";
+export * from "./event-classification";

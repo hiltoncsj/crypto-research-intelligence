@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   prisma,
+  ResearchEventClassificationMethod,
   ResearchEventConfidence,
   ResearchEventImpactDimension,
   ResearchEventKind,
@@ -14,6 +15,7 @@ import type {
   NormalizedSnapshotProposal,
   NormalizedTokenUnlockEvent,
 } from "@crypto-research/defi-data";
+import { classifyEvent } from "@crypto-research/scoring-engine";
 
 import { logEventsEvent } from "./logger";
 import type { TokenMarketKey } from "./profile-repository";
@@ -69,6 +71,10 @@ export async function persistSecurityIncidentRisks(
     const data = {
       kind: ResearchEventKind.RISK,
       category: "SECURITY_INCIDENT" as ResearchEventCategory,
+      // Sprint 20: fonte estruturada (DefiLlama /hacks) — nunca passa pela rule engine.
+      classificationMethod: ResearchEventClassificationMethod.STRUCTURED_SOURCE,
+      classificationRuleId: null,
+      classificationEvidence: null,
       title: incident.name,
       description: descriptionParts.length > 0 ? descriptionParts.join(" — ") : null,
       eventDate: new Date(incident.eventDate),
@@ -136,6 +142,10 @@ export async function persistFundingCatalysts(projectId: string): Promise<Events
     const data = {
       kind: ResearchEventKind.CATALYST,
       category: "FUNDING" as ResearchEventCategory,
+      // Sprint 20: fonte estruturada (FundingRound) — nunca passa pela rule engine.
+      classificationMethod: ResearchEventClassificationMethod.STRUCTURED_SOURCE,
+      classificationRuleId: null,
+      classificationEvidence: null,
       title: `${round.roundLabel ?? round.roundType} — ${amountLabel}`,
       description: null,
       eventDate: round.raisedAt,
@@ -218,6 +228,10 @@ export async function persistTokenMarketListingCatalysts(
     const data = {
       kind: ResearchEventKind.CATALYST,
       category: "LISTING" as ResearchEventCategory,
+      // Sprint 20: derivado por diff estruturado (TokenMarket) — nunca passa pela rule engine.
+      classificationMethod: ResearchEventClassificationMethod.STRUCTURED_SOURCE,
+      classificationRuleId: null,
+      classificationEvidence: null,
       title: `Listado em ${t.exchangeName} (${t.baseSymbol}/${t.targetSymbol})`,
       description: null,
       eventDate: detectedAt,
@@ -248,6 +262,10 @@ export async function persistTokenMarketListingCatalysts(
     const data = {
       kind: ResearchEventKind.CATALYST,
       category: "DELISTING" as ResearchEventCategory,
+      // Sprint 20: derivado por diff estruturado (TokenMarket) — nunca passa pela rule engine.
+      classificationMethod: ResearchEventClassificationMethod.STRUCTURED_SOURCE,
+      classificationRuleId: null,
+      classificationEvidence: null,
       title: `Removido de ${m.exchangeName} (${m.baseSymbol}/${m.targetSymbol})`,
       description: null,
       eventDate: detectedAt,
@@ -319,6 +337,10 @@ export async function persistTokenUnlockRisks(
     const data = {
       kind: ResearchEventKind.RISK,
       category: "TOKEN_UNLOCK" as ResearchEventCategory,
+      // Sprint 20: fonte estruturada (DefiLlama Pro emissions) — nunca passa pela rule engine.
+      classificationMethod: ResearchEventClassificationMethod.STRUCTURED_SOURCE,
+      classificationRuleId: null,
+      classificationEvidence: null,
       title: unlock.category ? `Unlock — ${unlock.category}` : "Token Unlock",
       description:
         [unlock.description, amountLabel].filter((v): v is string => v !== null).join(" — ") ||
@@ -367,38 +389,62 @@ export async function collectTokenUnlockRisks(
 }
 
 // ------------------------------------------------------------------------------------------
-// Catalyst — GitHub Releases (Sprint 19). Só chamado quando `Project.githubRepo` foi curado
-// manualmente (ver EXTERNAL_IDENTITY_ARCHITECTURE.md) — nunca inferido por nome.
+// Catalyst — GitHub Releases (Sprint 19, classificação real desde o Sprint 20). Só chamado
+// quando `Project.githubRepo` foi curado manualmente (ver EXTERNAL_IDENTITY_ARCHITECTURE.md).
 //
-// Categoria SEMPRE `OTHER`: um release não permite, por si só, inferir com confiança se é
-// PROTOCOL_UPGRADE/MAINNET/TESTNET/PRODUCT_LAUNCH (regra explícita da spec — "não classificar
-// automaticamente qualquer release como MAINNET/PROTOCOL_UPGRADE... nunca inventar significado
-// sem evidência"). `confidence` é `MEDIUM` para releases publicadas (fonte primária oficial,
-// mas classificação semântica ambígua) e `LOW` para drafts (o evento pode nem representar uma
-// mudança real ainda — só um rascunho).
+// A categoria é decidida pela Auditable Event Classification Engine
+// (`packages/scoring-engine/src/event-classification.ts`, `classifyEvent`) — regras
+// determinísticas sobre título+corpo do release, NUNCA um LLM, NUNCA "opinião do modelo" (ver
+// EVENT_CLASSIFICATION_ARCHITECTURE.md). Quando nenhuma regra tem evidência suficiente, a
+// engine já retorna `OTHER`/`LOW` — comportamento OBRIGATÓRIO (é melhor `OTHER` com baixa
+// confiança do que uma categoria errada com falsa precisão).
+//
+// Releases em DRAFT sempre recebem `confidence: LOW` e `status: UNKNOWN` independente do que a
+// engine classificou — um rascunho pode nem representar uma mudança real ainda; a categoria em
+// si (o QUE o texto parece descrever) ainda é útil para auditoria, só a CONFIANÇA de que o
+// evento de fato ocorreu é rebaixada.
 // ------------------------------------------------------------------------------------------
+
+export interface GithubReleaseClassificationSummary {
+  otherCount: number;
+  ruleUsage: Record<string, number>;
+}
 
 export async function persistGithubReleaseCatalysts(
   projectId: string,
   releases: NormalizedGithubRelease[],
-): Promise<EventsPersistResult> {
+): Promise<EventsPersistResult & { classification: GithubReleaseClassificationSummary }> {
   let created = 0;
   let updated = 0;
+  let otherCount = 0;
+  const ruleUsage: Record<string, number> = {};
 
   for (const r of releases) {
     const sourceId = String(r.releaseId);
+    const classification = classifyEvent({ title: r.title, description: r.body });
+
+    if (classification.ruleId) {
+      ruleUsage[classification.ruleId] = (ruleUsage[classification.ruleId] ?? 0) + 1;
+    }
+    if (classification.category === "OTHER") otherCount += 1;
+
     const data = {
       kind: ResearchEventKind.CATALYST,
-      category: "OTHER" as ResearchEventCategory,
+      category: classification.category as ResearchEventCategory,
+      classificationMethod: ResearchEventClassificationMethod.RULE,
+      classificationRuleId: classification.ruleId,
+      classificationEvidence: classification.evidence,
       title: r.title,
-      description: null,
+      description: null, // corpo do release NUNCA persistido cru — só usado para classificar
       eventDate: new Date(r.eventDate),
       publishedAt: r.publishedAt ? new Date(r.publishedAt) : null,
       source: "GITHUB",
       sourceUrl: r.url,
       impact: ResearchEventImpactDimension.ECOSYSTEM,
       status: r.draft ? ResearchEventStatus.UNKNOWN : ResearchEventStatus.COMPLETED,
-      confidence: r.draft ? ResearchEventConfidence.LOW : ResearchEventConfidence.MEDIUM,
+      confidence: r.draft
+        ? ResearchEventConfidence.LOW
+        : ResearchEventConfidence[classification.confidence],
       retrievedAt: new Date(r.retrievedAt),
     };
 
@@ -414,7 +460,7 @@ export async function persistGithubReleaseCatalysts(
     }
   }
 
-  return { created, updated, skipped: 0 };
+  return { created, updated, skipped: 0, classification: { otherCount, ruleUsage } };
 }
 
 export async function collectGithubReleaseCatalysts(
@@ -474,6 +520,14 @@ export async function persistSnapshotGovernanceCatalysts(
     const data = {
       kind: ResearchEventKind.CATALYST,
       category: "GOVERNANCE" as ResearchEventCategory,
+      // Sprint 20 (Fase 12 do documento de especificação): Snapshot é fonte estruturada de
+      // AUTORIDADE SUPERIOR — a engine de classificação NUNCA é chamada para este evento, nem
+      // mesmo quando o título/corpo da proposta contém palavras como "mainnet" (a engine nem
+      // tem a oportunidade de reclassificar, por construção — não é uma regra de prioridade
+      // dentro da engine, é a arquitetura em si).
+      classificationMethod: ResearchEventClassificationMethod.STRUCTURED_SOURCE,
+      classificationRuleId: null,
+      classificationEvidence: null,
       title: p.title,
       description: null,
       eventDate: new Date(p.eventDate),
@@ -533,6 +587,77 @@ export async function collectSnapshotGovernanceCatalysts(
 }
 
 // ------------------------------------------------------------------------------------------
+// Reclassificação de eventos GitHub existentes (Sprint 20, Fase 10). Nunca toca eventos de
+// fontes ESTRUTURADAS (Snapshot/FundingRound/SecurityIncident/Listing-Delisting/TokenUnlock) —
+// filtro `source: "GITHUB"` explícito, essas fontes já são a autoridade e não são reavaliadas
+// silenciosamente pela engine (regra explícita da Fase 10: "não reclassificar silenciosamente
+// eventos estruturados já classificados por fonte confiável").
+//
+// LIMITAÇÃO CONHECIDA (documentada, não escondida): o corpo (`body`) do release NUNCA é
+// persistido em `ResearchEvent.description` (ver comentário em `persistGithubReleaseCatalysts`)
+// — reclassificar um evento já existente só tem o `title` disponível, não o corpo completo que
+// alimentou a classificação original. Um evento cuja categoria dependia de uma frase presente só
+// no corpo pode não ser corretamente reclassificado aqui. Isso é aceitável porque a
+// reclassificação serve para aplicar CORREÇÕES/EVOLUÇÕES de regras sobre o título (o campo mais
+// estável e sempre disponível), não para reprocessar o payload original — se a fonte precisar
+// ser reprocessada de verdade, a próxima Research Run já faz isso naturalmente
+// (`persistGithubReleaseCatalysts` roda de novo com o body real).
+//
+// Nunca altera `sourceId`/`eventDate`/`publishedAt`/`retrievedAt` — só `category`/
+// `classificationMethod`/`classificationRuleId`/`classificationEvidence`/`confidence`.
+// Idempotente: mesma entrada (mesmo título) sempre produz a mesma classificação (função pura,
+// determinística) — rodar duas vezes não duplica nem oscila.
+// ------------------------------------------------------------------------------------------
+
+export interface ReclassificationSummary {
+  scanned: number;
+  reclassified: number;
+  unchanged: number;
+}
+
+export async function reclassifyExistingGithubEvents(
+  projectId?: string,
+): Promise<ReclassificationSummary> {
+  const events = await prisma.researchEvent.findMany({
+    where: { source: "GITHUB", ...(projectId ? { projectId } : {}) },
+  });
+
+  let reclassified = 0;
+  let unchanged = 0;
+
+  for (const e of events) {
+    const classification = classifyEvent({ title: e.title, description: null });
+    const isDraftLike = e.status === ResearchEventStatus.UNKNOWN;
+    const nextConfidence = isDraftLike
+      ? ResearchEventConfidence.LOW
+      : ResearchEventConfidence[classification.confidence];
+
+    if (
+      classification.category === e.category &&
+      classification.ruleId === e.classificationRuleId &&
+      nextConfidence === e.confidence
+    ) {
+      unchanged += 1;
+      continue;
+    }
+
+    await prisma.researchEvent.update({
+      where: { id: e.id },
+      data: {
+        category: classification.category as ResearchEventCategory,
+        classificationMethod: ResearchEventClassificationMethod.RULE,
+        classificationRuleId: classification.ruleId,
+        classificationEvidence: classification.evidence,
+        confidence: nextConfidence,
+      },
+    });
+    reclassified += 1;
+  }
+
+  return { scanned: events.length, reclassified, unchanged };
+}
+
+// ------------------------------------------------------------------------------------------
 // Leitura.
 // ------------------------------------------------------------------------------------------
 
@@ -551,6 +676,12 @@ export interface ResearchEventView {
   status: string;
   confidence: string;
   retrievedAt: string;
+  // Sprint 20 (Auditable Event Classification Engine) — disponível para auditoria (Fase 14 do
+  // documento de especificação: "a informação deve estar disponível para auditoria", mesmo
+  // quando a UI não a exibe diretamente). `null` para eventos anteriores a esta sprint.
+  classificationMethod: string | null;
+  classificationRuleId: string | null;
+  classificationEvidence: string | null;
 }
 
 function toView(e: {
@@ -568,6 +699,9 @@ function toView(e: {
   status: string;
   confidence: string;
   retrievedAt: Date;
+  classificationMethod: string | null;
+  classificationRuleId: string | null;
+  classificationEvidence: string | null;
 }): ResearchEventView {
   return {
     id: e.id,
@@ -584,6 +718,9 @@ function toView(e: {
     status: e.status,
     confidence: e.confidence,
     retrievedAt: e.retrievedAt.toISOString(),
+    classificationMethod: e.classificationMethod,
+    classificationRuleId: e.classificationRuleId,
+    classificationEvidence: e.classificationEvidence,
   };
 }
 

@@ -16,7 +16,8 @@
     "prisma:generate": "npm run generate --workspace=packages/database",
     "prisma:migrate": "npm run migrate --workspace=packages/database",
     "worker:dev": "tsx watch infrastructure/workers/research-worker.ts",
-    "scheduler:dev": "tsx watch infrastructure/workers/scheduler.ts"
+    "scheduler:dev": "tsx watch infrastructure/workers/scheduler.ts",
+    "reclassify-events": "tsx infrastructure/workers/reclassify-events.ts"
   },
   "devDependencies": {
     "eslint": "^9.13.0",

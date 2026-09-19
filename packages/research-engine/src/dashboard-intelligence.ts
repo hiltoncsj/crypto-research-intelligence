@@ -367,6 +367,9 @@ const RECENT_EVENTS_WINDOW_DAYS = 30;
 // simplesmente nunca encontra eventos dessa categoria até lá, sem erro).
 // Sprint 19: GOVERNANCE (Snapshot) e OTHER (GitHub Releases — categoria sempre conservadora,
 // ver events-repository.ts) adicionados.
+// Sprint 20: categorias que a Auditable Event Classification Engine pode atribuir a eventos
+// GitHub (packages/scoring-engine/src/event-classification.ts) adicionadas, para a agregação
+// cross-event já existente (Sprint 16) também cobri-las.
 const KNOWN_EVENT_CATEGORIES = [
   "FUNDING",
   "SECURITY_INCIDENT",
@@ -375,6 +378,18 @@ const KNOWN_EVENT_CATEGORIES = [
   "TOKEN_UNLOCK",
   "GOVERNANCE",
   "OTHER",
+  "MAINNET",
+  "TESTNET",
+  "PROTOCOL_UPGRADE",
+  "TOKEN_MIGRATION",
+  "TOKEN_BURN",
+  "TOKEN_BUYBACK",
+  "STAKING",
+  "NEW_CHAIN",
+  "ECOSYSTEM_EXPANSION",
+  "PRODUCT_LAUNCH",
+  "INTEGRATION",
+  "PARTNERSHIP",
 ] as const;
 
 export async function getEventIntelligenceOverview(): Promise<EventIntelligenceOverview> {

@@ -131,7 +131,19 @@ pronto e inativo — não tocado). Validação anti-SSRF em dois pontos independ
 também corrigiu 2 dívidas de teste pré-existentes (path errado de `.env` em `apps/web/tests/
 setup.ts`; cleanup incompleto em `discovery.integration.test.ts`) e rodou `npm run build` pela
 primeira vez — ver `SPRINT_19_IMPLEMENTATION_REPORT.md` para evidência completa (396 testes
-passando, 0 falhando).
+passando, 0 falhando). O Sprint 20 (`EVENT_CLASSIFICATION_ARCHITECTURE.md`) substituiu o
+`OTHER` hardcoded dos eventos GitHub por uma **Auditable Event Classification Engine**
+determinística (`packages/scoring-engine/src/event-classification.ts`, `classifyEvent` — 12
+categorias com regras conservadoras baseadas em verbo+ação, nunca `text.includes("palavra")`
+isolado; nunca LLM). Cada `ResearchEvent` ganhou `classificationMethod`
+(`STRUCTURED_SOURCE`/`RULE`/`MANUAL`/`FUTURE_LLM`) + `classificationRuleId` +
+`classificationEvidence` (nullable, expostos via `getCatalysts`/`getRisks` para auditoria).
+Fontes estruturadas (Snapshot/FundingRound/`/hacks`/Listing-Delisting/TokenUnlock) continuam
+`STRUCTURED_SOURCE`, nunca passam pela engine — confirmado que uma proposta Snapshot com
+"mainnet" no título permanece `GOVERNANCE`. Mecanismo de reclassificação de eventos GitHub já
+persistidos (`reclassifyExistingGithubEvents`, script `npm run reclassify-events`) — idempotente,
+nunca toca fontes estruturadas. Ver `SPRINT_20_IMPLEMENTATION_REPORT.md` para evidência completa
+(423 testes passando, 0 falhando).
 
 Monorepo `apps/web` mais `packages/{database,defi-data,research-engine,scoring-engine,queue,shared}`
 

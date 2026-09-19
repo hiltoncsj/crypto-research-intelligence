@@ -507,6 +507,7 @@ export function normalizeGithubReleases(
         releaseId: r.id,
         tagName: r.tag_name,
         title: nonEmptyString(r.name) ?? r.tag_name,
+        body: nonEmptyString(r.body ?? null),
         url: r.html_url,
         eventDate: publishedAt ?? r.created_at,
         publishedAt,

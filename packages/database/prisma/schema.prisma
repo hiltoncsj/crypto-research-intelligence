@@ -639,11 +639,37 @@ model ResearchEvent {
   retrievedAt       DateTime                      @map("retrieved_at")
   createdAt         DateTime                      @default(now()) @map("created_at")
   updatedAt         DateTime                      @updatedAt @map("updated_at")
+  // Sprint 20 (Auditable Event Classification Engine): reaproveita o `confidence` acima como a
+  // confiança da CLASSIFICAÇÃO em si (não um campo novo separado) — já é exatamente isso que o
+  // código faz desde o Sprint 15 (HIGH para fontes estruturadas, MEDIUM/LOW para inferência).
+  // Os 3 campos abaixo são novos: `classificationMethod` distingue "veio pronto de uma fonte
+  // estruturada" (STRUCTURED_SOURCE — Snapshot/FundingRound/SecurityIncident/Listing-Delisting)
+  // de "decidido por regra determinística sobre texto" (RULE — hoje só GitHub Releases).
+  // Todos opcionais/`NULL` de propósito — Fase 9 exige backward compatibility e permitir NULL
+  // para eventos históricos (nenhum default retroativo foi aplicado; ver
+  // EVENT_CLASSIFICATION_ARCHITECTURE.md "Reclassificação" para o mecanismo de backfill).
+  classificationMethod   ResearchEventClassificationMethod? @map("classification_method")
+  // Ex.: "mainnet-launch-v1" — null quando classificationMethod é STRUCTURED_SOURCE (a fonte já
+  // é a autoridade, nenhuma regra foi avaliada) ou quando nenhuma regra deu match (OTHER).
+  classificationRuleId  String?                             @map("classification_rule_id")
+  // Pequeno trecho do texto original que motivou a classificação (nunca o conteúdo inteiro —
+  // limite de tamanho aplicado na camada de classificação, ver event-classification.ts).
+  classificationEvidence String?                            @db.Text @map("classification_evidence")
 
   @@unique([projectId, source, sourceId], name: "research_event_dedupe")
   @@index([projectId, kind])
   @@index([projectId, eventDate])
   @@map("research_events")
+}
+
+// Sprint 20: como uma classificação foi decidida — nunca "opinião do modelo" (nenhum LLM nesta
+// sprint, ver Fase 25). FUTURE_LLM reservado para uma sprint futura explicitamente aprovada,
+// nunca usado hoje.
+enum ResearchEventClassificationMethod {
+  STRUCTURED_SOURCE
+  RULE
+  MANUAL
+  FUTURE_LLM
 }
 
 enum FundingRoundType {

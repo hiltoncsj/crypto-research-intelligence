@@ -339,6 +339,11 @@ export interface NormalizedGithubRelease {
   releaseId: number; // sourceId determinístico — nunca aleatório
   tagName: string;
   title: string;
+  // Sprint 20 (Auditable Event Classification Engine): repassado só para a camada de
+  // classificação decidir a categoria (packages/scoring-engine/src/event-classification.ts) —
+  // NUNCA persistido como `ResearchEvent.description` (mantido `null` lá, ver
+  // events-repository.ts) para não guardar changelogs inteiros/Markdown arbitrário no banco.
+  body: string | null;
   url: string;
   eventDate: string; // ISO — published_at, com fallback para created_at (ver normalizador)
   publishedAt: string | null; // null quando o release nunca foi "published" (só draft)
