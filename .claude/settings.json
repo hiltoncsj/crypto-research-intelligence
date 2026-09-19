@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const j=JSON.parse(d);const f=(j.tool_response&&j.tool_response.filePath)||j.tool_input.file_path;if(!f)return;require('child_process').execSync('npx prettier --write --ignore-unknown ' + JSON.stringify(f),{stdio:'ignore',cwd:process.cwd()});}catch(e){}});\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

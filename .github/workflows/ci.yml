@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # Sprint 2: packages/database e apps/web têm testes de integração reais contra Postgres
+    # (regra anti-mock do roadmap #64) — precisamos de um Postgres de verdade no CI, não só
+    # lint/typecheck.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: crypto_research
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/crypto_research?schema=public"
+      # Chave de teste gerada só para o CI — não é usada em nenhum ambiente real.
+      MASTER_ENCRYPTION_KEY: "1111111111111111111111111111111111111111111111111111111111111111"
+      NEXTAUTH_SECRET: "ci-test-secret-not-used-in-production"
+      NEXTAUTH_URL: "http://localhost:3000"
+      ADMIN_EMAIL: "admin@example.com"
+      ADMIN_PASSWORD_HASH: "$2a$10$CwTycUXWue0Thq9StjUM0uJ8Cw44w1lTA5AY6xO/lF0.pE7RUS1Xu"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm install
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - name: Aplicar migrations
+        run: npx prisma migrate deploy --schema packages/database/prisma/schema.prisma
+
+      - run: npm test

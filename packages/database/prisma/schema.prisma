@@ -1,0 +1,902 @@
+// Sprint 1: apenas as tabelas sem dependência de coleta de dados (seção 7 do plano).
+// tvl_snapshots, revenue_snapshots, research_runs, scores, etc. entram em sprints futuras.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  DISCOVERED
+  ACTIVE
+  ARCHIVED
+}
+
+// Sprint 2 (seção 9/10 do plano): status de uma conexão de API, alinhado ao vocabulário
+// do roadmap #64 (REAL/PARTIAL/MOCK/UNAVAILABLE/ERROR) + NOT_CONFIGURED para o estado inicial
+// antes do primeiro teste bem-sucedido.
+enum ApiConnectionStatus {
+  NOT_CONFIGURED
+  REAL
+  PARTIAL
+  MOCK
+  UNAVAILABLE
+  ERROR
+}
+
+// Sprint 2 (seção 6 do CLAUDE.md / Fase 6-7): representa uma conexão de API, não apenas
+// uma chave — por isso tem status, histórico de teste e metadata, além do segredo em si.
+// `encryptedSecret` é opcional porque alguns providers (ex: DefiLlama) não exigem API key
+// (roadmap: seção 9 do plano de implementação) — a conexão ainda existe para rastrear status
+// e permitir testá-la, mesmo sem segredo algum armazenado.
+model ApiConnection {
+  id              String              @id @default(uuid())
+  provider        String              @unique
+  name            String
+  encryptedSecret String?             @map("encrypted_secret")
+  status          ApiConnectionStatus @default(NOT_CONFIGURED)
+  metadata        Json?
+  lastError       String?             @map("last_error")
+  lastTestedAt    DateTime?           @map("last_tested_at")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  @@map("api_connections")
+}
+
+model Sector {
+  id             String   @id @default(uuid())
+  name           String   @unique
+  parentSectorId String?  @map("parent_sector_id")
+  parentSector   Sector?  @relation("SectorHierarchy", fields: [parentSectorId], references: [id])
+  childSectors   Sector[] @relation("SectorHierarchy")
+  projects       Project[]
+
+  @@map("sectors")
+}
+
+model Chain {
+  id                 String @id @default(uuid())
+  name               String
+  defillamaChainSlug String @unique @map("defillama_chain_slug")
+
+  projectChains ProjectChain[]
+
+  @@map("chains")
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  slug        String        @unique
+  name        String
+  defillamaId String        @unique @map("defillama_id")
+  sectorId    String        @map("sector_id")
+  sector      Sector        @relation(fields: [sectorId], references: [id])
+  // Não há tabela `narratives` definida no plano (seção 7) — mantido como referência
+  // solta (sem FK) até essa tabela ser especificada em uma sprint futura.
+  narrativeId String?       @map("narrative_id")
+  // Sprint 11 (integração CoinGecko): vem do campo `gecko_id` que a própria DefiLlama já
+  // devolve em /protocol/{name} e /protocols — nunca inferido por matching de nome/símbolo
+  // (seria ambíguo: vários tokens compartilham símbolo). `null` quando a DefiLlama não conhece
+  // o gecko_id daquele protocolo; nesse caso os campos derivados da CoinGecko (FDV/supplies)
+  // continuam `N/A`, nunca adivinhados.
+  // NÃO é `@unique`: várias listagens de protocolo da DefiLlama (versões/forks, ex.: "aave" e
+  // "aave-v2") legitimamente compartilham o mesmo token/gecko_id — descoberto em produção
+  // (2026-09-17) quando o upsert de "aave" colidia com o `coinGeckoId` já gravado por "aave-v2".
+  coinGeckoId String?       @map("coin_gecko_id")
+  status      ProjectStatus @default(DISCOVERED)
+  // Sprint 8 (Project Discovery): preenchidos só quando o Project nasce do mecanismo de
+  // descoberta automática (packages/research-engine/src/discovery.ts), nunca sobrescritos em
+  // upserts seguintes — ver PROJECT_DISCOVERY_SPEC.md. Projetos criados manualmente (fora do
+  // Discovery) ficam com os três `null`, distinguindo claramente as duas origens (seção 7 do
+  // Sprint 8: "não alterar descoberta manual").
+  discoveredAt           DateTime? @map("discovered_at")
+  discoverySource        String?   @map("discovery_source")
+  discoveryFilterVersion String?   @map("discovery_filter_version")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  tvlSnapshots      TvlSnapshot[]
+  revenueSnapshots  RevenueSnapshot[]
+  feeSnapshots      FeeSnapshot[]
+  marketDataSnapshots MarketDataSnapshot[]
+  profileSnapshots  ProjectProfileSnapshot[]
+  tokenMarkets      TokenMarket[]
+  researchEvents    ResearchEvent[]
+  projectChains     ProjectChain[]
+  fundamentalScores FundamentalScore[]
+  token                      Token?
+  tokenUnlocks               TokenUnlock[]
+  fundingRounds              FundingRound[]
+  tokenomicsScores           TokenomicsScore[]
+  institutionalCapitalScores InstitutionalCapitalScore[]
+  kanbanCards                KanbanCard[]
+  researchRunSelections      ResearchRunSelection[]
+
+  @@index([sectorId])
+  @@index([discoveredAt])
+  @@index([coinGeckoId])
+  @@map("projects")
+}
+
+// Sprint 4 (Fase 1): estados de uma execução do Research Engine. QUEUED = criada, aguardando
+// o Worker pegar o job; RUNNING = worker processando; COMPLETED = todos os projetos ok;
+// PARTIAL = pelo menos um projeto falhou mas a run terminou (Fase 18: falha parcial != FAILED);
+// FAILED = erro fatal antes/durante a execução, nenhum projeto processado com sucesso;
+// CANCELLED = cancelamento solicitado e honrado pelo Worker (Fase 22).
+enum ResearchRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+  CANCELLED
+}
+
+enum ResearchRunMode {
+  FULL
+  INCREMENTAL
+}
+
+enum ResearchRunTrigger {
+  MANUAL
+  SCHEDULED
+  SYSTEM
+}
+
+// Sprint 4 (Fase 1): cada execução do Research Engine, criada pela API antes de enfileirar o
+// job BullMQ. `cancelRequested` é o sinal que o Worker verifica entre projetos (Fase 22) —
+// não há como matar um job BullMQ em execução de forma limpa, então cancelamento é cooperativo.
+model ResearchRun {
+  id                  String             @id @default(uuid())
+  status              ResearchRunStatus  @default(QUEUED)
+  mode                ResearchRunMode
+  trigger             ResearchRunTrigger
+  startedAt           DateTime?          @map("started_at")
+  finishedAt          DateTime?          @map("finished_at")
+  requestedBy         String?            @map("requested_by")
+  totalProjects       Int                @default(0) @map("total_projects")
+  processedProjects   Int                @default(0) @map("processed_projects")
+  successfulProjects  Int                @default(0) @map("successful_projects")
+  failedProjects      Int                @default(0) @map("failed_projects")
+  suspiciousProjects  Int                @default(0) @map("suspicious_projects")
+  cancelRequested     Boolean            @default(false) @map("cancel_requested")
+  errorMessage        String?            @map("error_message")
+  metadata            Json?
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+
+  fundamentalScores FundamentalScore[]
+  tokenomicsScores  TokenomicsScore[]
+  institutionalCapitalScores InstitutionalCapitalScore[]
+  kanbanCards       KanbanCard[]
+  selections        ResearchRunSelection[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("research_runs")
+}
+
+// Sprint 8 (Top 10 Selection — ver TOP10_SELECTION_SPEC.md): "fotografia" de quais projetos
+// foram priorizados em UM ciclo específico de Research Run — nunca sobrescrita por uma run
+// seguinte (cada ResearchRun tem seu próprio conjunto de linhas). Projetos que saem do Top 10
+// não são apagados daqui nem de `Project` — só deixam de ganhar uma linha nova na próxima run.
+// `onDelete: Cascade` é seguro para o cleanup de testes (CLAUDE.md, gotcha de FK): apagar um
+// Project/ResearchRun de teste remove a seleção junto, nunca bloqueia o delete.
+model ResearchRunSelection {
+  id             String       @id @default(uuid())
+  researchRunId  String       @map("research_run_id")
+  researchRun    ResearchRun  @relation(fields: [researchRunId], references: [id], onDelete: Cascade)
+  projectId      String       @map("project_id")
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  rank           Int
+  priorityScore  Decimal      @db.Decimal(6, 2) @map("priority_score")
+  globalScore    Decimal?     @db.Decimal(5, 2) @map("global_score")
+  growthMomentum Decimal?     @db.Decimal(5, 2) @map("growth_momentum")
+  capitalMomentum Decimal?    @db.Decimal(5, 2) @map("capital_momentum")
+  selectionModelVersion String @map("selection_model_version")
+  selectionReason String[]    @map("selection_reason")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@unique([researchRunId, projectId])
+  @@index([researchRunId, rank])
+  @@index([projectId])
+  @@map("research_run_selections")
+}
+
+enum AgentFrequency {
+  MANUAL
+  DAILY
+  EVERY_12_HOURS
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+// Sprint 4 (Fase 2): configuração singleton do Research Agent (scheduler). Só uma linha
+// existe no MVP — não há suporte a múltiplos agentes configurados nesta sprint.
+model AgentSettings {
+  id         String         @id @default(uuid())
+  enabled    Boolean        @default(false)
+  frequency  AgentFrequency @default(MANUAL)
+  mode       ResearchRunMode @default(FULL)
+  lastRunAt  DateTime?      @map("last_run_at")
+  nextRunAt  DateTime?      @map("next_run_at")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+
+  @@map("agent_settings")
+}
+
+// Sprint 3 (Fase 2/6 do plano): fonte do dado. Só DefiLlama existe hoje, mas o enum já
+// evita strings soltas quando um segundo provider aparecer (ex: CoinGecko, Sprint futuro).
+enum SnapshotSource {
+  DEFILLAMA
+  COINGECKO
+}
+
+// Sprint 3 (Fase 6): qualidade do dado — o Validator classifica cada ponto antes de decidir
+// se persiste. Nunca descartamos silenciosamente: SUSPICIOUS ainda é gravado, só marcado.
+enum DataQuality {
+  VALID
+  SUSPICIOUS
+}
+
+// Sprint 3 (Fase 2 e 12): histórico imutável de TVL, com proveniência completa.
+// `sourceTimestamp` é a data do PONTO histórico reportado pela fonte (granularidade diária,
+// truncada para meia-noite UTC — a API do DefiLlama já é diária); `retrievedAt` é quando
+// ESTA coleta rodou. São conceitos diferentes (Fase 12): duas execuções do pipeline em dias
+// diferentes podem re-observar o mesmo `sourceTimestamp` com `retrievedAt` distintos — por
+// isso a deduplicação (Fase 3) é por (projeto, fonte, sourceTimestamp), não por retrievedAt.
+model TvlSnapshot {
+  id               String         @id @default(uuid())
+  projectId        String         @map("project_id")
+  project          Project        @relation(fields: [projectId], references: [id])
+  valueUsd         Decimal        @map("value_usd") @db.Decimal(30, 2)
+  source           SnapshotSource @default(DEFILLAMA)
+  sourceTimestamp  DateTime       @map("source_timestamp")
+  retrievedAt      DateTime       @map("retrieved_at")
+  quality          DataQuality    @default(VALID)
+  qualityReason    String?        @map("quality_reason")
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  @@unique([projectId, source, sourceTimestamp], name: "tvl_snapshot_dedupe")
+  @@index([projectId, sourceTimestamp])
+  @@map("tvl_snapshots")
+}
+
+// Sprint 3 (Fase 2): Revenue != Fees (regra explícita do roadmap #10) — tabela separada,
+// mesmo shape de proveniência que TvlSnapshot.
+model RevenueSnapshot {
+  id              String         @id @default(uuid())
+  projectId       String         @map("project_id")
+  project         Project        @relation(fields: [projectId], references: [id])
+  revenueUsd      Decimal        @map("revenue_usd") @db.Decimal(30, 2)
+  source          SnapshotSource @default(DEFILLAMA)
+  sourceTimestamp DateTime       @map("source_timestamp")
+  retrievedAt     DateTime       @map("retrieved_at")
+  quality         DataQuality    @default(VALID)
+  qualityReason   String?        @map("quality_reason")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  @@unique([projectId, source, sourceTimestamp], name: "revenue_snapshot_dedupe")
+  @@index([projectId, sourceTimestamp])
+  @@map("revenue_snapshots")
+}
+
+model FeeSnapshot {
+  id              String         @id @default(uuid())
+  projectId       String         @map("project_id")
+  project         Project        @relation(fields: [projectId], references: [id])
+  feesUsd         Decimal        @map("fees_usd") @db.Decimal(30, 2)
+  source          SnapshotSource @default(DEFILLAMA)
+  sourceTimestamp DateTime       @map("source_timestamp")
+  retrievedAt     DateTime       @map("retrieved_at")
+  quality         DataQuality    @default(VALID)
+  qualityReason   String?        @map("quality_reason")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  @@unique([projectId, source, sourceTimestamp], name: "fee_snapshot_dedupe")
+  @@index([projectId, sourceTimestamp])
+  @@map("fee_snapshots")
+}
+
+// Sprint 12 (Historical Market Data — fundação para Trading Intelligence/Backtesting futuros,
+// ver PROJECT_GAP_ANALYSIS.md seção 35 "Dados que devem começar a ser coletados agora"): série
+// histórica diária de preço/market cap/volume, vinda de GET /coins/{id}/market_chart da
+// CoinGecko, só para projetos com `Project.coinGeckoId` conhecido.
+//
+// Decisão arquitetural (não dividido em PriceSnapshot/MarketCapSnapshot/VolumeSnapshot
+// separados): os três valores vêm ATOMICAMENTE da mesma resposta da mesma chamada de API, no
+// mesmo timestamp, e qualquer consulta futura de "valuation acompanha fundamentos" precisa dos
+// três juntos por data — separar em três tabelas exigiria 3 joins para reconstruir o que a fonte
+// já entrega junto, sem nenhum benefício de consulta real hoje. Segue o MESMO padrão de
+// TvlSnapshot/RevenueSnapshot/FeeSnapshot (INSERT-only, imutável, dedupe por
+// projeto+fonte+timestamp) — granularidade diária (truncada para meia-noite UTC), nunca
+// hora-a-hora (ver coingecko-client.ts: MARKET_DATA_HISTORY_DAYS). NÃO armazena OHLC: a fonte
+// atual (`market_chart`) só devolve um preço por ponto, não um candle completo — nenhum campo
+// open/high/low/close é fabricado a partir dele (ver comentário em
+// packages/defi-data/src/types.ts, NormalizedMarketDataPoint). `fdvUsd` histórico continua
+// indisponível nesta sprint: a CoinGecko não expõe FDV histórico no endpoint gratuito, e não
+// calculamos um substituto silenciosamente (priceUsd × totalSupply seria uma estimativa, não o
+// dado real) — só o FDV atual em `Token.fdvUsd` (Sprint 11) permanece confiável.
+model MarketDataSnapshot {
+  id              String         @id @default(uuid())
+  projectId       String         @map("project_id")
+  project         Project        @relation(fields: [projectId], references: [id])
+  priceUsd        Decimal?       @map("price_usd") @db.Decimal(30, 10)
+  marketCapUsd    Decimal?       @map("market_cap_usd") @db.Decimal(30, 2)
+  volumeUsd       Decimal?       @map("volume_usd") @db.Decimal(30, 2)
+  source          SnapshotSource @default(COINGECKO)
+  sourceTimestamp DateTime       @map("source_timestamp")
+  retrievedAt     DateTime       @map("retrieved_at")
+  quality         DataQuality    @default(VALID)
+  qualityReason   String?        @map("quality_reason")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  @@unique([projectId, source, sourceTimestamp], name: "market_data_snapshot_dedupe")
+  @@index([projectId, sourceTimestamp])
+  @@map("market_data_snapshots")
+}
+
+// Sprint 3 (Fase 2): em quais chains o projeto opera. `active` permite marcar uma chain como
+// descontinuada sem apagar o histórico de que ela já existiu para o projeto (seção 7 do
+// plano fala em "chains suportadas" — aqui é especificamente a associação projeto<->chain).
+model ProjectChain {
+  id           String         @id @default(uuid())
+  projectId    String         @map("project_id")
+  project      Project        @relation(fields: [projectId], references: [id])
+  chainId      String         @map("chain_id")
+  chain        Chain          @relation(fields: [chainId], references: [id])
+  source       SnapshotSource @default(DEFILLAMA)
+  detectedAt   DateTime       @default(now()) @map("detected_at")
+  active       Boolean        @default(true)
+
+  @@unique([projectId, chainId])
+  @@map("project_chains")
+}
+
+// Sprint 5 (Fase 5/15/16/17/18): resultado de uma avaliação de Fundamental Score. Sempre um
+// INSERT novo por (researchRunId, projectId) — nunca UPDATE — para preservar o histórico
+// (Fase 18: "não sobrescrever simplesmente o Score anterior"). `breakdown` carrega tanto o
+// detalhamento por componente (Fase 13) quanto o Research Trace (Fase 14: fonte, timestamp,
+// valor, percentile, cálculo) — decisão deliberada de não criar `research_findings`/
+// `research_sources` como tabelas relacionais separadas nesta sprint (evita overengineering
+// para um único consumidor hoje); o formato do JSON é documentado em
+// packages/research-engine/src/score-repository.ts.
+model FundamentalScore {
+  id                String      @id @default(uuid())
+  researchRunId     String      @map("research_run_id")
+  researchRun       ResearchRun @relation(fields: [researchRunId], references: [id])
+  projectId         String      @map("project_id")
+  project           Project     @relation(fields: [projectId], references: [id])
+  scoreModelVersion String      @map("score_model_version")
+  totalScore        Decimal     @map("total_score") @db.Decimal(5, 2)
+  maxScore          Decimal     @map("max_score") @db.Decimal(5, 2)
+  confidence        Decimal     @db.Decimal(5, 2)
+  partial           Boolean     @default(false)
+  breakdown         Json
+  createdAt         DateTime    @default(now()) @map("created_at")
+
+  @@index([projectId, createdAt])
+  @@index([researchRunId])
+  @@map("fundamental_scores")
+}
+
+// Sprint 6 (Parte 2): 1:1 com Project — resumo do token. `marketCapUsd`/`symbol`/
+// `contractAddress` vêm da DefiLlama (campo `mcap` de /protocol/{name}, já buscado pelo
+// pipeline sem chamada extra).
+// Sprint 11 (integração CoinGecko): `circulatingSupply`/`totalSupply`/`maxSupply`/`fdvUsd`
+// passam a ser preenchidos quando `Project.coinGeckoId` é conhecido (ver `coinGeckoRetrievedAt`
+// para o timestamp dessa parte, distinto de `retrievedAt`, que continua sendo o da DefiLlama).
+// Quando `coinGeckoId` é `null` ou a chamada falha, esses 4 campos continuam `null` — nunca
+// `0`, nunca adivinhados.
+model Token {
+  id                String   @id @default(uuid())
+  projectId         String   @unique @map("project_id")
+  project           Project  @relation(fields: [projectId], references: [id])
+  symbol            String?
+  contractAddress   String?  @map("contract_address")
+  marketCapUsd      Decimal? @map("market_cap_usd") @db.Decimal(30, 2)
+  circulatingSupply Decimal? @map("circulating_supply") @db.Decimal(38, 8)
+  totalSupply       Decimal? @map("total_supply") @db.Decimal(38, 8)
+  maxSupply         Decimal? @map("max_supply") @db.Decimal(38, 8)
+  fdvUsd            Decimal? @map("fdv_usd") @db.Decimal(30, 2)
+  // Sprint 11+ (ranking de market cap da CoinGecko): `market_cap_rank` de GET /coins/{id} —
+  // mesma regra dos outros campos de CoinGecko, `null` quando `coinGeckoId` é desconhecido ou a
+  // chamada falha, nunca inventado.
+  marketCapRank     Int?      @map("market_cap_rank")
+  coinGeckoRetrievedAt DateTime? @map("coin_gecko_retrieved_at")
+  source            SnapshotSource @default(DEFILLAMA)
+  retrievedAt       DateTime @map("retrieved_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("tokens")
+}
+
+// Sprint 6 (Parte 4): reservada pela arquitetura (DoD exige "Unlock model implementado"), mas
+// NUNCA populada nesta sprint — não existe fonte gratuita confiável (api.llama.fi/emissions/*
+// retorna HTTP 402, plano pago). Fica vazia até uma fonte real ser integrada; nenhuma linha
+// fabricada. Ver Known Limitations do relatório do Sprint 6.
+enum UnlockAllocationType {
+  TEAM
+  INVESTORS
+  ADVISORS
+  TREASURY
+  ECOSYSTEM
+  COMMUNITY
+  MARKETING
+  LIQUIDITY
+  OTHER
+}
+
+model TokenUnlock {
+  id             String               @id @default(uuid())
+  projectId      String               @map("project_id")
+  project        Project              @relation(fields: [projectId], references: [id])
+  unlockDate     DateTime             @map("unlock_date")
+  amount         Decimal              @db.Decimal(38, 8)
+  percentage     Decimal?             @db.Decimal(5, 2)
+  allocationType UnlockAllocationType @default(OTHER) @map("allocation_type")
+  source         SnapshotSource       @default(DEFILLAMA)
+  sourceTimestamp DateTime            @map("source_timestamp")
+  retrievedAt    DateTime             @map("retrieved_at")
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  @@index([projectId, unlockDate])
+  @@map("token_unlocks")
+}
+
+// Sprint 13 (Parte B — Perfil do Projeto): descrição/categoria/blockchain(s)/homepage, vindos do
+// MESMO payload de GET /coins/{id} já buscado por `getCoinMarketData` (Sprint 11) — nenhuma
+// chamada HTTP extra. INSERT-only, mas com DEDUPE POR CONTEÚDO (não por timestamp): o campo
+// `last_updated` da CoinGecko muda a cada research run mesmo quando a descrição/categoria não
+// mudou nada, então gravar por timestamp criaria uma linha idêntica a cada run. A camada de
+// persistência (`profile-repository.ts`) só insere uma linha nova quando o conteúdo normalizado
+// difere do último registro do projeto — histórico real preservado sem redundância.
+model ProjectProfileSnapshot {
+  id              String         @id @default(uuid())
+  projectId       String         @map("project_id")
+  project         Project        @relation(fields: [projectId], references: [id])
+  descriptionEn   String?        @map("description_en") @db.Text
+  categories      String[]
+  platforms       String[]
+  homepageUrl     String?        @map("homepage_url")
+  source          SnapshotSource @default(COINGECKO)
+  sourceTimestamp DateTime       @map("source_timestamp")
+  retrievedAt     DateTime       @map("retrieved_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  @@index([projectId, createdAt])
+  @@map("project_profile_snapshots")
+}
+
+// Sprint 13 (Parte B — Onde o Token é Negociado): mercados reais vindos do MESMO payload de
+// GET /coins/{id} (flag `tickers=true`, Sprint 13) — de novo, nenhuma chamada HTTP extra além da
+// já feita para FDV/supplies. Ao contrário dos snapshots de preço/TVL (série histórica real),
+// mercados são um ESTADO ATUAL (mesma filosofia de `Token`, "resumo, não série histórica" —
+// ver comentário do model Token abaixo): a fonte já entrega os ~100 tickers mais relevantes a
+// cada chamada, então manter uma linha por (projeto, exchange, par) e fazer UPSERT a cada run
+// evita crescimento ilimitado de linhas quase-idênticas — o "histórico" de mercados é dado pelo
+// próprio `retrievedAt` sempre visível no relatório ("na última coleta, ..." — nunca apresentado
+// como fato permanente). Nunca DELETADO quando um mercado deixa de aparecer numa coleta — apenas
+// para de ser atualizado (`retrievedAt` fica visivelmente desatualizado).
+model TokenMarket {
+  id              String         @id @default(uuid())
+  projectId       String         @map("project_id")
+  project         Project        @relation(fields: [projectId], references: [id])
+  exchangeId      String         @map("exchange_id")
+  exchangeName    String         @map("exchange_name")
+  baseSymbol      String         @map("base_symbol")
+  targetSymbol    String         @map("target_symbol")
+  marketType      String         @default("SPOT") @map("market_type")
+  tradeUrl        String?        @map("trade_url")
+  volumeUsd       Decimal?       @map("volume_usd") @db.Decimal(30, 2)
+  lastPriceUsd    Decimal?       @map("last_price_usd") @db.Decimal(30, 10)
+  source          SnapshotSource @default(COINGECKO)
+  sourceTimestamp DateTime       @map("source_timestamp")
+  retrievedAt     DateTime       @map("retrieved_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  @@unique([projectId, exchangeId, baseSymbol, targetSymbol], name: "token_market_dedupe")
+  @@index([projectId, retrievedAt])
+  @@map("token_markets")
+}
+
+// Sprint 15 (Catalysts + Risks + Fundamental Context) — ver SPRINT_15_IMPLEMENTATION_REPORT.md
+// seção "Source Investigation" para a investigação completa de fontes. Só 2 fontes reais e
+// auto-identificáveis (sem curadoria manual) foram encontradas: DefiLlama `/hacks` (incidentes de
+// segurança reais, casados por `defillamaId` — mesmo espaço de IDs de `Project.defillamaId`) e
+// os `FundingRound` já persistidos desde o Sprint 6 (reclassificados como Catalyst FUNDING, zero
+// coleta nova). GitHub Releases e Snapshot.org (governança) são APIs reais e funcionais
+// (confirmado por chamada ao vivo nesta sprint), mas exigem mapear projeto→repositório/space, que
+// não existe em nenhum campo hoje — não implementadas para não depender de curadoria manual/dado
+// inferido. O enum de categorias abaixo já cobre a taxonomia completa pedida (Catalyst ∪ Risk,
+// sem duplicatas) para não exigir migration quando novas fontes forem integradas — só 2 valores
+// (`FUNDING`, `SECURITY_INCIDENT`) são de fato populados hoje.
+enum ResearchEventKind {
+  CATALYST
+  RISK
+}
+
+enum ResearchEventCategory {
+  MAINNET
+  TESTNET
+  PROTOCOL_UPGRADE
+  GOVERNANCE
+  INTEGRATION
+  PARTNERSHIP
+  LISTING
+  DELISTING
+  TOKEN_LAUNCH
+  TOKEN_MIGRATION
+  TOKEN_UNLOCK
+  TOKEN_BURN
+  TOKEN_BUYBACK
+  STAKING
+  REVENUE_SHARE
+  NEW_CHAIN
+  ECOSYSTEM_EXPANSION
+  INSTITUTIONAL_ADOPTION
+  FUNDING
+  PRODUCT_LAUNCH
+  REGULATORY
+  HIGH_INFLATION
+  LOW_VALUE_CAPTURE
+  CENTRALIZATION
+  CONCENTRATION
+  LIQUIDITY
+  SMART_CONTRACT
+  BRIDGE
+  ORACLE
+  COMPETITION
+  INCENTIVE_DEPENDENCE
+  REVENUE_CONCENTRATION
+  TVL_DECLINE
+  USER_DECLINE
+  VOLUME_DECLINE
+  SECURITY_INCIDENT
+  PROTOCOL_DEPENDENCY
+  CHAIN_DEPENDENCY
+  MARKET_STRUCTURE
+  OTHER
+}
+
+enum ResearchEventStatus {
+  ANNOUNCED
+  SCHEDULED
+  ONGOING
+  COMPLETED
+  CANCELLED
+  UNKNOWN
+}
+
+enum ResearchEventConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// FUNDAMENTAL/MARKET/TOKENOMICS/ECOSYSTEM/GOVERNANCE/REGULATORY/SECURITY (seção 17) — dimensão
+// fundamental potencialmente afetada, nunca "Bullish"/"Bearish".
+enum ResearchEventImpactDimension {
+  FUNDAMENTAL
+  MARKET
+  TOKENOMICS
+  ECOSYSTEM
+  GOVERNANCE
+  REGULATORY
+  SECURITY
+}
+
+// Sprint 15 (Parte 3/33): evento factual — fato observável, nunca opinião/previsão. Sempre
+// INSERT/UPDATE por linha (não série histórica ponto-a-ponto como TVL), mas `status` pode mudar
+// ao longo do tempo (ANNOUNCED -> SCHEDULED -> COMPLETED) sem apagar o evento original — o
+// `updatedAt` e o `status` atual são suficientes para o MVP (seção 33: "histórico da mudança deve
+// permanecer rastreável QUANDO HOUVER BENEFÍCIO REAL" — versionar cada transição de status não se
+// justifica ainda, sem nenhum consumidor que precise disso; reavaliar se/quando um consumidor
+// real precisar). Dedupe por (projectId, source, sourceId) — sourceId é sempre construído de
+// forma estável pelo coletor (nunca aleatório), nunca por nome (evita duplicar o mesmo evento
+// reportado com grafias diferentes).
+model ResearchEvent {
+  id                String                        @id @default(uuid())
+  projectId         String                        @map("project_id")
+  project           Project                       @relation(fields: [projectId], references: [id])
+  kind              ResearchEventKind
+  category          ResearchEventCategory
+  title             String
+  description       String?                       @db.Text
+  eventDate         DateTime?                     @map("event_date")
+  publishedAt       DateTime?                     @map("published_at")
+  source            String
+  sourceUrl         String?                       @map("source_url")
+  sourceId          String                        @map("source_id")
+  impact            ResearchEventImpactDimension
+  status            ResearchEventStatus           @default(UNKNOWN)
+  confidence        ResearchEventConfidence
+  retrievedAt       DateTime                      @map("retrieved_at")
+  createdAt         DateTime                      @default(now()) @map("created_at")
+  updatedAt         DateTime                      @updatedAt @map("updated_at")
+
+  @@unique([projectId, source, sourceId], name: "research_event_dedupe")
+  @@index([projectId, kind])
+  @@index([projectId, eventDate])
+  @@map("research_events")
+}
+
+enum FundingRoundType {
+  PRE_SEED
+  SEED
+  SERIES_A
+  SERIES_B
+  SERIES_C
+  STRATEGIC
+  PRIVATE
+  PUBLIC
+  ICO
+  OTHER
+}
+
+// Sprint 6 (Parte 9): dado real, vindo do campo `raises` de /protocol/{name} (endpoint
+// gratuito, mesma allowlist api.llama.fi já usada desde o Sprint 2). Dedupe por
+// (projectId, sourceTimestamp, roundLabel) — a DefiLlama não fornece um id estável por round.
+model FundingRound {
+  id            String           @id @default(uuid())
+  projectId     String           @map("project_id")
+  project       Project          @relation(fields: [projectId], references: [id])
+  roundType     FundingRoundType @default(OTHER) @map("round_type")
+  roundLabel    String?          @map("round_label")
+  amountUsd     Decimal?         @map("amount_usd") @db.Decimal(20, 2)
+  valuationUsd  Decimal?         @map("valuation_usd") @db.Decimal(20, 2)
+  raisedAt      DateTime         @map("raised_at")
+  source        SnapshotSource   @default(DEFILLAMA)
+  sourceTimestamp DateTime       @map("source_timestamp")
+  retrievedAt   DateTime         @map("retrieved_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  investors FundingRoundInvestor[]
+
+  @@unique([projectId, sourceTimestamp, roundLabel], name: "funding_round_dedupe")
+  @@index([projectId, raisedAt])
+  @@map("funding_rounds")
+}
+
+// Sprint 6 (Parte 10): entidade global de investidor (reaproveitável entre rounds/projetos) —
+// identificado só pelo nome, como a DefiLlama reporta (não há id estável de investidor na
+// fonte gratuita). "Known Investors" é o dado objetivo, sem qualquer avaliação de qualidade
+// (Parte 11/13: "não criar um score de qualidade do VC arbitrário").
+model Investor {
+  id   String @id @default(uuid())
+  name String @unique
+
+  rounds FundingRoundInvestor[]
+
+  @@map("investors")
+}
+
+model FundingRoundInvestor {
+  fundingRoundId String       @map("funding_round_id")
+  fundingRound   FundingRound @relation(fields: [fundingRoundId], references: [id])
+  investorId     String       @map("investor_id")
+  investor       Investor     @relation(fields: [investorId], references: [id])
+  isLead         Boolean      @default(false) @map("is_lead")
+
+  @@id([fundingRoundId, investorId])
+  @@map("funding_round_investors")
+}
+
+// Sprint 6 (Parte 7): Tokenomics Score — mesmo padrão de FundamentalScore (sempre INSERT,
+// nunca UPDATE). HOJE sempre `partial: true` com todos os grupos em `missingGroups` para os
+// projetos fixos de dev, porque nenhuma fonte gratuita real cobre supply/unlocks/value capture
+// (ver Token/TokenUnlock acima) — a matemática é real e testada com fixtures sintéticas, mas
+// não há dado de produção para preenchê-la ainda. Documentado, não escondido.
+model TokenomicsScore {
+  id                String      @id @default(uuid())
+  researchRunId     String      @map("research_run_id")
+  researchRun       ResearchRun @relation(fields: [researchRunId], references: [id])
+  projectId         String      @map("project_id")
+  project           Project     @relation(fields: [projectId], references: [id])
+  scoreModelVersion String      @map("score_model_version")
+  totalScore        Decimal     @map("total_score") @db.Decimal(5, 2)
+  maxScore          Decimal     @map("max_score") @db.Decimal(5, 2)
+  confidence        Decimal     @db.Decimal(5, 2)
+  partial           Boolean     @default(false)
+  breakdown         Json
+  createdAt         DateTime    @default(now()) @map("created_at")
+
+  @@index([projectId, createdAt])
+  @@index([researchRunId])
+  @@map("tokenomics_scores")
+}
+
+// Sprint 6 (Parte 12): Institutional Capital Score. Ao contrário do Tokenomics, ESTE tem dado
+// real (funding_rounds vem de /protocol/{name}.raises) — score calculável de verdade para
+// projetos com histórico de captação conhecido pela DefiLlama.
+model InstitutionalCapitalScore {
+  id                String      @id @default(uuid())
+  researchRunId     String      @map("research_run_id")
+  researchRun       ResearchRun @relation(fields: [researchRunId], references: [id])
+  projectId         String      @map("project_id")
+  project           Project     @relation(fields: [projectId], references: [id])
+  scoreModelVersion String      @map("score_model_version")
+  totalScore        Decimal     @map("total_score") @db.Decimal(5, 2)
+  maxScore          Decimal     @map("max_score") @db.Decimal(5, 2)
+  confidence        Decimal     @db.Decimal(5, 2)
+  partial           Boolean     @default(false)
+  breakdown         Json
+  createdAt         DateTime    @default(now()) @map("created_at")
+
+  @@index([projectId, createdAt])
+  @@index([researchRunId])
+  @@map("institutional_capital_scores")
+}
+
+// Sprint 7: colunas fixas do MVP (seção 14 do plano) — mapeadas 1:1 nas etapas reais do
+// pipeline (pipeline.ts): descoberta do projeto (upsert), coleta de snapshots, cálculo de
+// score, e "publicado" quando o projeto termina com sucesso na Research Run. Deliberadamente
+// NÃO usamos os nomes genéricos "Analysis/Validation/Review" do princípio #5 do Pull System
+// ("começar com o que já existe") — o board deve refletir o fluxo real do research-engine,
+// não uma estrutura organizacional nova inventada para o Kanban.
+enum KanbanColumnKey {
+  BACKLOG
+  DISCOVERY
+  DATA_COLLECTION
+  FUNDAMENTAL_ANALYSIS
+  SCORING
+  PUBLISHED
+}
+
+// Estado do card, independente da coluna (seção 12 do Pull System) — um card pode estar
+// SCORING+READY (no buffer, aguardando a próxima etapa puxar) ou SCORING+IN_PROGRESS.
+enum KanbanCardStatus {
+  READY
+  IN_PROGRESS
+  BLOCKED
+  DONE
+}
+
+// Subcoluna Em Andamento/Pronto (seção 7 do Pull System) — Pronto funciona como buffer/sinal
+// de capacidade para a próxima etapa puxar.
+enum KanbanSubcolumn {
+  IN_PROGRESS
+  READY
+}
+
+// Seção 20 do Pull System: quem executou a ação (card.assignee ou ator de uma movimentação/
+// bloqueio/urgência) — reaproveita o mesmo vocabulário de ResearchRunTrigger
+// (MANUAL/SCHEDULED/SYSTEM) em vez de inventar um sistema de atores paralelo.
+enum KanbanActorType {
+  HUMAN
+  AGENT
+  SYSTEM
+}
+
+// Sprint 7 (seção 18): board único do MVP — não há suporte a múltiplos boards ainda, mas o
+// modelo já existe para não exigir migração quando isso for necessário.
+model KanbanBoard {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  columns  KanbanColumn[]
+  cards    KanbanCard[]
+  policies KanbanPolicy[]
+
+  @@map("kanban_boards")
+}
+
+// `wipLimit` nullable = sem limite configurado (ex.: BACKLOG e PUBLISHED, que não são
+// etapas de processamento real — seção 9 do Pull System: WIP só faz sentido em etapas com
+// capacidade finita de execução).
+model KanbanColumn {
+  id        String          @id @default(uuid())
+  boardId   String          @map("board_id")
+  board     KanbanBoard     @relation(fields: [boardId], references: [id])
+  key       KanbanColumnKey
+  name      String
+  position  Int
+  wipLimit  Int?            @map("wip_limit")
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  cards KanbanCard[]
+
+  @@unique([boardId, key])
+  @@index([boardId, position])
+  @@map("kanban_columns")
+}
+
+// Sprint 7 (seção 18/19): `projectId`/`researchRunId` são opcionais e usam `onDelete: SetNull`
+// — de propósito, para não repetir o problema de FK do Sprint 5 (seção 41: uma nova FK
+// obrigatória quebrando o cleanup de testes que fazem `prisma.project.delete`/
+// `prisma.researchRun.delete` em `afterAll`). Um card nunca é apagado quando o projeto ou a
+// research run associada é removida — só perde a referência.
+model KanbanCard {
+  id              String           @id @default(uuid())
+  boardId         String           @map("board_id")
+  board           KanbanBoard      @relation(fields: [boardId], references: [id])
+  columnId        String           @map("column_id")
+  column          KanbanColumn     @relation(fields: [columnId], references: [id])
+  subcolumn       KanbanSubcolumn  @default(IN_PROGRESS) @map("subcolumn")
+  cardStatus      KanbanCardStatus @default(READY) @map("card_status")
+  title           String
+  description     String?
+  priority        Int              @default(0)
+  swimlane        String?
+  type            String           @default("RESEARCH")
+  assigneeType    KanbanActorType? @map("assignee_type")
+  assigneeId      String?          @map("assignee_id")
+  projectId       String?          @map("project_id")
+  project         Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  researchRunId   String?          @map("research_run_id")
+  researchRun     ResearchRun?     @relation(fields: [researchRunId], references: [id], onDelete: SetNull)
+  urgent          Boolean          @default(false)
+  urgentReason    String?          @map("urgent_reason")
+  urgentBy        String?          @map("urgent_by")
+  urgentAt        DateTime?        @map("urgent_at")
+  blockedReason   String?          @map("blocked_reason")
+  blockedAt       DateTime?        @map("blocked_at")
+  blockedBy       String?          @map("blocked_by")
+  unblockedAt     DateTime?        @map("unblocked_at")
+  unblockedBy     String?          @map("unblocked_by")
+  dueDate         DateTime?        @map("due_date")
+  tags            Json?
+  enteredColumnAt DateTime         @default(now()) @map("entered_column_at")
+  startedAt       DateTime?        @map("started_at")
+  completedAt     DateTime?        @map("completed_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  movements KanbanCardMovement[]
+
+  @@index([boardId, columnId])
+  @@index([columnId, cardStatus])
+  @@index([projectId])
+  @@index([researchRunId])
+  @@map("kanban_cards")
+}
+
+// Histórico imutável (seção 21) — nunca é UPDATE/DELETE, só INSERT. `fromColumnId`/
+// `toColumnId` são armazenados sem FK relacional (só índice) deliberadamente: é um log de
+// auditoria append-only, não precisa navegar de volta para a coluna via Prisma, e evitar a
+// FK aqui também evita ter que decidir uma política de cascade para colunas (que no MVP nunca
+// são apagadas).
+model KanbanCardMovement {
+  id           String            @id @default(uuid())
+  cardId       String            @map("card_id")
+  card         KanbanCard        @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  fromColumnId String?           @map("from_column_id")
+  toColumnId   String            @map("to_column_id")
+  fromStatus   KanbanCardStatus? @map("from_status")
+  toStatus     KanbanCardStatus  @map("to_status")
+  actorType    KanbanActorType   @map("actor_type")
+  actorId      String?           @map("actor_id")
+  reason       String?
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  @@index([cardId, createdAt])
+  @@index([toColumnId, createdAt])
+  @@map("kanban_card_movements")
+}
+
+// Seção 27/28/29 do Pull System: políticas explícitas do board (WIP policy, Urgent policy,
+// Definition of Ready, Definition of Done) como chave/valor JSON — evita uma tabela rígida por
+// tipo de política antes de saber quantos tipos realmente vão existir.
+model KanbanPolicy {
+  id        String      @id @default(uuid())
+  boardId   String      @map("board_id")
+  board     KanbanBoard @relation(fields: [boardId], references: [id])
+  key       String
+  value     Json
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  @@unique([boardId, key])
+  @@map("kanban_policies")
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@crypto-research/research-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@crypto-research/database": "*",
+    "@crypto-research/defi-data": "*",
+    "@crypto-research/scoring-engine": "*",
+    "@crypto-research/shared": "*"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}

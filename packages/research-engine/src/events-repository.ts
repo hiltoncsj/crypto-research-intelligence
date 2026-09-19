@@ -1,0 +1,254 @@
+import { createHash } from "node:crypto";
+import {
+  prisma,
+  ResearchEventConfidence,
+  ResearchEventImpactDimension,
+  ResearchEventKind,
+  ResearchEventStatus,
+  type ResearchEventCategory,
+} from "@crypto-research/database";
+import type { NormalizedSecurityIncident } from "@crypto-research/defi-data";
+
+import { logEventsEvent } from "./logger";
+
+// Sprint 15 (Catalysts + Risks + Fundamental Context) — ver o comentário do model
+// `ResearchEvent` em schema.prisma e a seção "Source Investigation" do
+// SPRINT_15_IMPLEMENTATION_REPORT.md para a investigação completa. Só 2 fontes reais e
+// auto-identificáveis foram encontradas: DefiLlama `/hacks` (Risk, SECURITY_INCIDENT) e os
+// `FundingRound` já persistidos (Catalyst, FUNDING, zero coleta nova). Mesma separação de
+// camadas dos demais *-repository.ts.
+
+function stableSourceId(...parts: string[]): string {
+  return createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 32);
+}
+
+// ------------------------------------------------------------------------------------------
+// Risk — Security Incidents (DefiLlama /hacks, casado por defillamaId).
+// ------------------------------------------------------------------------------------------
+
+export interface EventsPersistResult {
+  created: number;
+  updated: number;
+  skipped: number;
+}
+
+/**
+ * Persiste incidentes de segurança REAIS para um projeto, a partir de uma lista de hacks JÁ
+ * NORMALIZADA E JÁ BUSCADA (uma única vez por Research Run — seção 28: "não fazer N+1 external
+ * requests"). Filtra por `defillamaId` exato — nunca por nome (evita atribuição incorreta entre
+ * protocolos com nomes parecidos).
+ */
+export async function persistSecurityIncidentRisks(
+  projectId: string,
+  defillamaId: string | null,
+  allHacks: NormalizedSecurityIncident[],
+): Promise<EventsPersistResult> {
+  if (!defillamaId) return { created: 0, updated: 0, skipped: 0 };
+
+  const matching = allHacks.filter((h) => h.defillamaId === defillamaId);
+  let created = 0;
+  let updated = 0;
+
+  for (const incident of matching) {
+    const sourceId = stableSourceId(defillamaId, incident.eventDate, incident.name);
+    const existing = await prisma.researchEvent.findUnique({
+      where: { research_event_dedupe: { projectId, source: "DEFILLAMA", sourceId } },
+    });
+
+    const descriptionParts = [incident.classification, incident.technique].filter(
+      (v): v is string => v !== null,
+    );
+
+    const data = {
+      kind: ResearchEventKind.RISK,
+      category: "SECURITY_INCIDENT" as ResearchEventCategory,
+      title: incident.name,
+      description: descriptionParts.length > 0 ? descriptionParts.join(" — ") : null,
+      eventDate: new Date(incident.eventDate),
+      publishedAt: null,
+      source: "DEFILLAMA",
+      sourceUrl: incident.sourceUrl,
+      impact: ResearchEventImpactDimension.SECURITY,
+      status: ResearchEventStatus.COMPLETED, // incidente já ocorreu — fato histórico, nunca previsão
+      confidence: ResearchEventConfidence.HIGH, // fonte primária estruturada (DefiLlama /hacks)
+      retrievedAt: new Date(incident.retrievedAt),
+    };
+
+    if (existing) {
+      await prisma.researchEvent.update({ where: { id: existing.id }, data });
+      updated += 1;
+    } else {
+      await prisma.researchEvent.create({ data: { ...data, projectId, sourceId } });
+      created += 1;
+    }
+  }
+
+  return { created, updated, skipped: 0 };
+}
+
+export async function collectSecurityIncidentRisks(
+  projectId: string,
+  slug: string,
+  defillamaId: string | null,
+  allHacks: NormalizedSecurityIncident[],
+): Promise<void> {
+  try {
+    const result = await persistSecurityIncidentRisks(projectId, defillamaId, allHacks);
+    logEventsEvent("events.security_incidents_collected", { slug, projectId, ...result });
+  } catch (err) {
+    logEventsEvent("events.security_incidents_failed", {
+      slug,
+      projectId,
+      error: err instanceof Error ? err.message : "Erro desconhecido",
+    });
+  }
+}
+
+// ------------------------------------------------------------------------------------------
+// Catalyst — Funding rounds (reclassificação de FundingRound já persistido, zero coleta nova).
+// ------------------------------------------------------------------------------------------
+
+/**
+ * Reclassifica os `FundingRound` já persistidos (Sprint 6) como Catalyst FUNDING — nenhuma
+ * chamada HTTP nova, nenhum dado novo coletado. `sourceId` = `FundingRound.id`, já estável.
+ */
+export async function persistFundingCatalysts(projectId: string): Promise<EventsPersistResult> {
+  const rounds = await prisma.fundingRound.findMany({ where: { projectId } });
+  let created = 0;
+  let updated = 0;
+
+  for (const round of rounds) {
+    const existing = await prisma.researchEvent.findUnique({
+      where: { research_event_dedupe: { projectId, source: "DEFILLAMA", sourceId: round.id } },
+    });
+
+    const amountLabel =
+      round.amountUsd !== null
+        ? `US$ ${Number(round.amountUsd).toLocaleString("en-US")}`
+        : "valor não divulgado";
+    const data = {
+      kind: ResearchEventKind.CATALYST,
+      category: "FUNDING" as ResearchEventCategory,
+      title: `${round.roundLabel ?? round.roundType} — ${amountLabel}`,
+      description: null,
+      eventDate: round.raisedAt,
+      publishedAt: null,
+      source: "DEFILLAMA",
+      sourceUrl: null,
+      impact: ResearchEventImpactDimension.ECOSYSTEM,
+      status: ResearchEventStatus.COMPLETED, // rodada já captada — fato histórico
+      confidence: ResearchEventConfidence.HIGH,
+      retrievedAt: round.retrievedAt,
+    };
+
+    if (existing) {
+      await prisma.researchEvent.update({ where: { id: existing.id }, data });
+      updated += 1;
+    } else {
+      await prisma.researchEvent.create({ data: { ...data, projectId, sourceId: round.id } });
+      created += 1;
+    }
+  }
+
+  return { created, updated, skipped: 0 };
+}
+
+export async function collectFundingCatalysts(projectId: string, slug: string): Promise<void> {
+  try {
+    const result = await persistFundingCatalysts(projectId);
+    logEventsEvent("events.funding_catalysts_collected", { slug, projectId, ...result });
+  } catch (err) {
+    logEventsEvent("events.funding_catalysts_failed", {
+      slug,
+      projectId,
+      error: err instanceof Error ? err.message : "Erro desconhecido",
+    });
+  }
+}
+
+// ------------------------------------------------------------------------------------------
+// Leitura.
+// ------------------------------------------------------------------------------------------
+
+export interface ResearchEventView {
+  id: string;
+  projectId: string;
+  kind: "CATALYST" | "RISK";
+  category: string;
+  title: string;
+  description: string | null;
+  eventDate: string | null;
+  publishedAt: string | null;
+  source: string;
+  sourceUrl: string | null;
+  impact: string;
+  status: string;
+  confidence: string;
+  retrievedAt: string;
+}
+
+function toView(e: {
+  id: string;
+  projectId: string;
+  kind: string;
+  category: string;
+  title: string;
+  description: string | null;
+  eventDate: Date | null;
+  publishedAt: Date | null;
+  source: string;
+  sourceUrl: string | null;
+  impact: string;
+  status: string;
+  confidence: string;
+  retrievedAt: Date;
+}): ResearchEventView {
+  return {
+    id: e.id,
+    projectId: e.projectId,
+    kind: e.kind as "CATALYST" | "RISK",
+    category: e.category,
+    title: e.title,
+    description: e.description,
+    eventDate: e.eventDate?.toISOString() ?? null,
+    publishedAt: e.publishedAt?.toISOString() ?? null,
+    source: e.source,
+    sourceUrl: e.sourceUrl,
+    impact: e.impact,
+    status: e.status,
+    confidence: e.confidence,
+    retrievedAt: e.retrievedAt.toISOString(),
+  };
+}
+
+export async function getCatalysts(projectId: string): Promise<ResearchEventView[]> {
+  const rows = await prisma.researchEvent.findMany({
+    where: { projectId, kind: ResearchEventKind.CATALYST },
+    orderBy: { eventDate: "desc" },
+  });
+  return rows.map(toView);
+}
+
+export async function getRisks(projectId: string): Promise<ResearchEventView[]> {
+  const rows = await prisma.researchEvent.findMany({
+    where: { projectId, kind: ResearchEventKind.RISK },
+    orderBy: { eventDate: "desc" },
+  });
+  return rows.map(toView);
+}
+
+// Sprint 16 (Event Impact Analysis) — todos os eventos (Catalyst + Risk) de um projeto, usados
+// pelo Event Impact Engine para: (a) carregar o evento sendo analisado; (b) detectar overlap
+// com outros eventos do mesmo projeto (seção 15).
+export async function getAllEvents(projectId: string): Promise<ResearchEventView[]> {
+  const rows = await prisma.researchEvent.findMany({
+    where: { projectId },
+    orderBy: { eventDate: "desc" },
+  });
+  return rows.map(toView);
+}
+
+export async function getEventById(eventId: string): Promise<ResearchEventView | null> {
+  const row = await prisma.researchEvent.findUnique({ where: { id: eventId } });
+  return row ? toView(row) : null;
+}

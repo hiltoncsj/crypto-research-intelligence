@@ -1,0 +1,548 @@
+/* Landing page "terminal" — mesma identidade visual da apresentação publicada, adaptada para
+   rodar dentro do Next.js (CSS Module, para não vazar classnames genéricos como .card/.pill
+   para o resto do app, que já usa esses nomes em src/app/globals.css). */
+
+.page {
+  --bg: #070a10;
+  --panel: #0d131d;
+  --panel-2: #121a28;
+  --line: rgba(159, 182, 214, 0.14);
+  --line-strong: rgba(159, 182, 214, 0.26);
+  --ink: #e7edf6;
+  --ink-dim: #93a5bf;
+  --ink-faint: #5b6b84;
+  --signal: #ffb648;
+  --signal-dim: rgba(255, 182, 72, 0.14);
+  --signal-line: rgba(255, 182, 72, 0.4);
+  --cool: #7dc4ff;
+  --good: #6bd88f;
+  --warn: #ffb648;
+
+  color-scheme: dark;
+  color: var(--ink);
+  background:
+    radial-gradient(1100px 480px at 12% -8%, rgba(255, 182, 72, 0.07), transparent 60%),
+    radial-gradient(900px 500px at 88% 6%, rgba(125, 196, 255, 0.06), transparent 55%), var(--bg);
+  min-height: 100vh;
+}
+
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding-inline: 16px;
+}
+
+.page a {
+  color: var(--cool);
+}
+
+.page h1,
+.page h2,
+.page h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+.page p {
+  color: var(--ink-dim);
+  line-height: 1.65;
+  margin: 0;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.tab {
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--signal);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.eyebrow::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--signal);
+  box-shadow: 0 0 8px var(--signal);
+}
+
+/* nav */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding-block: 14px;
+  background: rgba(7, 10, 16, 0.82);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.brandDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--good);
+  box-shadow: 0 0 8px var(--good);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brandDot {
+    animation: none;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.navlinks {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  font-size: 13px;
+}
+
+.navlinks a {
+  color: var(--ink-dim);
+  text-decoration: none;
+}
+
+.navlinks a:hover {
+  color: var(--ink);
+}
+
+.loginBtn {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--signal-line);
+  background: var(--signal-dim);
+  color: var(--signal);
+  text-decoration: none !important;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.loginBtn:hover {
+  background: var(--signal);
+  color: #201200;
+}
+
+/* hero */
+
+.hero {
+  padding-block: 56px 40px;
+  display: grid;
+  gap: 28px;
+}
+
+.hero h1 {
+  font-family: var(--font-mono);
+  font-size: clamp(30px, 5.4vw, 52px);
+  line-height: 1.08;
+  max-width: 16ch;
+}
+
+.accent {
+  color: var(--signal);
+}
+
+.heroSub {
+  max-width: 56ch;
+  font-size: 16px;
+  margin-top: 14px;
+}
+
+.heroMeta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+
+.pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-dim);
+  background: var(--panel);
+}
+
+.heroCta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.ctaPrimary {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 22px;
+  border-radius: 999px;
+  border: 1px solid var(--signal);
+  background: var(--signal);
+  color: #201200;
+  text-decoration: none !important;
+}
+
+.ctaPrimary:hover {
+  filter: brightness(1.08);
+}
+
+.ctaSecondary {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  padding: 11px 22px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-dim) !important;
+  text-decoration: none !important;
+}
+
+.ctaSecondary:hover {
+  color: var(--ink) !important;
+  border-color: var(--line-strong);
+}
+
+/* terminal readout */
+
+.terminal {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.termBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+}
+
+.lights {
+  display: flex;
+  gap: 6px;
+}
+
+.lights span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  display: block;
+}
+
+.termBody {
+  padding: 18px 16px 20px;
+  overflow-x: auto;
+}
+
+.flow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 640px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.flowNode {
+  padding: 9px 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.flowArrow {
+  color: var(--ink-faint);
+  padding-inline: 8px;
+}
+
+.flowNode.hot,
+.hot {
+  border-color: var(--signal-line);
+  color: var(--signal);
+  background: var(--signal-dim);
+}
+
+/* sections */
+
+.section {
+  padding-block: 52px;
+  border-top: 1px solid var(--line);
+}
+
+.sectionHead {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 62ch;
+  margin-bottom: 32px;
+}
+
+.sectionHead h2 {
+  font-family: var(--font-mono);
+  font-size: clamp(22px, 3vw, 28px);
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 820px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card h3 {
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.card p {
+  font-size: 13px;
+}
+
+.k {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.colWip {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.colWip.tight {
+  color: var(--warn);
+}
+
+/* scoring bars */
+
+.barBox {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 6px 18px;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: 150px 1fr 56px;
+  align-items: center;
+  gap: 12px;
+  padding-block: 9px;
+  border-bottom: 1px solid var(--line);
+}
+
+.barRow:last-child {
+  border-bottom: none;
+}
+
+.barLabel {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.barTrack {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--cool), var(--signal));
+  display: block;
+}
+
+.barVal {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-dim);
+  text-align: right;
+}
+
+.note {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  margin-top: 10px;
+}
+
+/* ranking table */
+
+.tableWrap {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.tableWrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tableWrap th,
+.tableWrap td {
+  padding: 11px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.tableWrap th {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: var(--panel-2);
+}
+
+.tableWrap tr:last-child td {
+  border-bottom: none;
+}
+
+.num {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.conf {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.confBar {
+  width: 44px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+.confBar i {
+  display: block;
+  height: 100%;
+  background: var(--good);
+}
+
+/* stack */
+
+.stackRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.chip {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+  color: var(--ink-dim);
+}
+
+.footer {
+  border-top: 1px solid var(--line);
+  padding-block: 28px 40px;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.footer p {
+  font-size: 12px;
+  color: var(--ink-faint);
+}

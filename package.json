@@ -1,0 +1,30 @@
+{
+  "name": "crypto-research",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "eslint .",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p infrastructure/workers/tsconfig.json",
+    "test": "npm run test --workspaces --if-present",
+    "prisma:generate": "npm run generate --workspace=packages/database",
+    "prisma:migrate": "npm run migrate --workspace=packages/database",
+    "worker:dev": "tsx watch infrastructure/workers/research-worker.ts",
+    "scheduler:dev": "tsx watch infrastructure/workers/scheduler.ts"
+  },
+  "devDependencies": {
+    "eslint": "^9.13.0",
+    "@eslint/js": "^9.13.0",
+    "typescript-eslint": "^8.13.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3",
+    "tsx": "^4.19.2",
+    "dotenv": "^16.4.5"
+  }
+}
