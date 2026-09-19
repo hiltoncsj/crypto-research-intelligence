@@ -127,7 +127,9 @@ export type EventsEvent =
   | "events.security_incidents_failed"
   | "events.funding_catalysts_collected"
   | "events.funding_catalysts_failed"
-  | "events.hacks_fetch_failed";
+  | "events.hacks_fetch_failed"
+  | "events.listing_catalysts_collected"
+  | "events.listing_catalysts_failed";
 
 export function logEventsEvent(event: EventsEvent, data: Record<string, unknown> = {}): void {
   console.log(JSON.stringify({ event, timestamp: new Date().toISOString(), ...data }));

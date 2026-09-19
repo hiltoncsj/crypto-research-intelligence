@@ -87,7 +87,29 @@ abaixo de 3 observações). Matemática pura em
 nova** — mesma decisão do Sprint 14 (Historical Fundamental Intelligence), mesma justificativa
 (volume de eventos ainda pequeno, cálculo barato). Exposto no Project Report (nova seção "##
 Impacto Histórico de Eventos"), na Home do Dashboard ("Event Intelligence") e em
-`GET /api/projects/[slug]/event-impacts`.
+`GET /api/projects/[slug]/event-impacts`. O Sprint 17 passou a exibir Perfil do Projeto e Onde o
+Token é Negociado (Sprint 13) diretamente na página do projeto
+(`apps/web/src/app/dashboard/projects/[slug]/page.tsx`, via `apps/web/src/lib/research.ts`), não
+mais só no Markdown baixável — reaproveita `getLatestProjectProfile`/`getTokenMarkets`, nenhuma
+chamada nova. Também adicionou tradução real PT-BR da descrição do projeto (CoinGecko vem em
+inglês) via MyMemory Translation API (`packages/defi-data/src/translate-client.ts`,
+`translateToPortuguese`), persistida em `ProjectProfileSnapshot.descriptionPt` (calculada uma vez
+por mudança de conteúdo do perfil); se a tradução falhar, cai para o texto em inglês com aviso
+explícito — nunca uma tradução parcial ou fabricada. O Sprint 18 (numerado assim para não colidir
+com o Sprint 17 acima — o doc de especificação recebido se autodenominava "Sprint 17") fez uma
+Source Intelligence Audit completa para Catalysts/Risks (`CATALYSTS_RISKS_SOURCE_AUDIT.md`,
+estende `CATALYSTS_RISKS_ARCHITECTURE.md` do Sprint 15) e implementou só a categoria com fonte
+zero-custo/zero-curadoria encontrada: Catalyst `LISTING`/`DELISTING`, derivado do diff de
+`TokenMarket` entre Research Runs consecutivas (`getCurrentTokenMarketKeys` em
+`profile-repository.ts`, lido ANTES do upsert da run; `persistTokenMarketListingCatalysts` em
+`events-repository.ts`) — nenhuma chamada HTTP nova, `eventDate` = momento em que a mudança foi
+percebida (não a data real do anúncio), `confidence` MEDIUM por essa imprecisão. Na primeira
+coleta de um projeto (sem `TokenMarket` anterior) nenhum evento é emitido, para não fabricar
+histórico. `PROTOCOL_UPGRADE`/`MAINNET`/`TESTNET` (GitHub Releases) e `GOVERNANCE` (Snapshot.org)
+têm APIs reais e gratuitas mas exigem curadoria manual de `Project.githubRepo`/
+`Project.snapshotSpace` (não implementado, decisão de produto pendente); `TOKEN_UNLOCK` só tem
+fonte paga (DefiLlama Pro). Demais 12 categorias de Catalyst e 17 de Risk seguem sem fonte
+adequada — `NOT_IMPLEMENTED` documentado, nunca fabricado.
 
 Monorepo `apps/web` mais `packages/{database,defi-data,research-engine,scoring-engine,queue,shared}`
 
@@ -196,9 +218,12 @@ pg_tables WHERE schemaname='public'` — se as tabelas esperadas já existem, é
   sempre mata o processo filho real (`next-server`, `tsx`). Se a porta continuar em uso depois
   de parar o comando, encontre o PID (`netstat -ano | grep ":<porta>"`) e finalize direto
   (`taskkill //F //PID <pid>`).
-- **Sem mock de fonte externa**: toda integração com DefiLlama é real (`api.llama.fi`), mesmo
-  em testes (que pulam automaticamente se a máquina estiver offline) — nunca fabricar um
-  status "healthy"/dado sintético para substituir uma chamada real.
+- **Sem mock de fonte externa**: toda integração com DefiLlama (`api.llama.fi`), CoinGecko, e
+  desde o Sprint 17 a MyMemory Translation API (`api.mymemory.translated.net`, tradução PT-BR de
+  descrições — gratuita, sem API key, limite de ~500 caracteres por requisição, texto é dividido
+  em frases de até 450 caracteres, máximo 2 tentativas) é real, mesmo em testes (que pulam
+  automaticamente se a máquina estiver offline) — nunca fabricar um status "healthy"/dado
+  sintético/tradução parcial para substituir uma chamada real.
 - **`docker-compose` só sobe Postgres+Redis**: worker e scheduler continuam sendo processos
   manuais (`npm run worker:dev` / `npm run scheduler:dev`), não fazem parte do `dev` nem do
   compose.

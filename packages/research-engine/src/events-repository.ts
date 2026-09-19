@@ -7,9 +7,13 @@ import {
   ResearchEventStatus,
   type ResearchEventCategory,
 } from "@crypto-research/database";
-import type { NormalizedSecurityIncident } from "@crypto-research/defi-data";
+import type {
+  NormalizedMarketTicker,
+  NormalizedSecurityIncident,
+} from "@crypto-research/defi-data";
 
 import { logEventsEvent } from "./logger";
+import type { TokenMarketKey } from "./profile-repository";
 
 // Sprint 15 (Catalysts + Risks + Fundamental Context) — ver o comentário do model
 // `ResearchEvent` em schema.prisma e a seção "Source Investigation" do
@@ -159,6 +163,125 @@ export async function collectFundingCatalysts(projectId: string, slug: string): 
     logEventsEvent("events.funding_catalysts_collected", { slug, projectId, ...result });
   } catch (err) {
     logEventsEvent("events.funding_catalysts_failed", {
+      slug,
+      projectId,
+      error: err instanceof Error ? err.message : "Erro desconhecido",
+    });
+  }
+}
+
+// ------------------------------------------------------------------------------------------
+// Catalyst — Listing/Delisting (derivado do diff de TokenMarket entre Research Runs, zero
+// chamada HTTP nova — Sprint 17). Ver CATALYSTS_RISKS_SOURCE_AUDIT.md seção 7, item 1.
+//
+// `eventDate` reflete o momento em que a MUDANÇA FOI PERCEBIDA (retrievedAt da coleta atual),
+// não a data real do anúncio da exchange — a granularidade é o intervalo entre Research Runs.
+// `confidence` é MEDIUM (não HIGH) exatamente por essa imprecisão de data, mesmo a fonte
+// (CoinGecko tickers, já usada desde o Sprint 13) sendo primária/estruturada.
+//
+// Na PRIMEIRA coleta de um projeto (nenhum TokenMarket anterior persistido), `previousMarkets`
+// vem vazio — nesse caso NENHUM evento é emitido: listar todos os mercados encontrados como
+// "LISTING" seria fabricar histórico que não presenciamos, não uma mudança real detectada.
+// ------------------------------------------------------------------------------------------
+
+function tokenMarketKeyId(k: {
+  exchangeId: string;
+  baseSymbol: string;
+  targetSymbol: string;
+}): string {
+  return `${k.exchangeId}|${k.baseSymbol}|${k.targetSymbol}`;
+}
+
+export async function persistTokenMarketListingCatalysts(
+  projectId: string,
+  previousMarkets: TokenMarketKey[],
+  tickers: NormalizedMarketTicker[],
+): Promise<EventsPersistResult> {
+  if (previousMarkets.length === 0) return { created: 0, updated: 0, skipped: 0 };
+
+  const previousByKey = new Map(previousMarkets.map((m) => [tokenMarketKeyId(m), m]));
+  const currentByKey = new Map(tickers.map((t) => [tokenMarketKeyId(t), t]));
+
+  const added = [...currentByKey.entries()].filter(([key]) => !previousByKey.has(key));
+  const removed = [...previousByKey.entries()].filter(([key]) => !currentByKey.has(key));
+
+  let created = 0;
+  let updated = 0;
+
+  for (const [key, t] of added) {
+    const detectedAt = new Date(t.retrievedAt);
+    const detectedDay = detectedAt.toISOString().slice(0, 10);
+    const sourceId = stableSourceId("LISTING", key, detectedDay);
+    const data = {
+      kind: ResearchEventKind.CATALYST,
+      category: "LISTING" as ResearchEventCategory,
+      title: `Listado em ${t.exchangeName} (${t.baseSymbol}/${t.targetSymbol})`,
+      description: null,
+      eventDate: detectedAt,
+      publishedAt: null,
+      source: "COINGECKO",
+      sourceUrl: t.tradeUrl,
+      impact: ResearchEventImpactDimension.MARKET,
+      status: ResearchEventStatus.COMPLETED,
+      confidence: ResearchEventConfidence.MEDIUM,
+      retrievedAt: detectedAt,
+    };
+    const existing = await prisma.researchEvent.findUnique({
+      where: { research_event_dedupe: { projectId, source: "COINGECKO", sourceId } },
+    });
+    if (existing) {
+      await prisma.researchEvent.update({ where: { id: existing.id }, data });
+      updated += 1;
+    } else {
+      await prisma.researchEvent.create({ data: { ...data, projectId, sourceId } });
+      created += 1;
+    }
+  }
+
+  for (const [key, m] of removed) {
+    const detectedAt = new Date();
+    const detectedDay = detectedAt.toISOString().slice(0, 10);
+    const sourceId = stableSourceId("DELISTING", key, detectedDay);
+    const data = {
+      kind: ResearchEventKind.CATALYST,
+      category: "DELISTING" as ResearchEventCategory,
+      title: `Removido de ${m.exchangeName} (${m.baseSymbol}/${m.targetSymbol})`,
+      description: null,
+      eventDate: detectedAt,
+      publishedAt: null,
+      source: "COINGECKO",
+      sourceUrl: null,
+      impact: ResearchEventImpactDimension.MARKET,
+      status: ResearchEventStatus.COMPLETED,
+      confidence: ResearchEventConfidence.MEDIUM,
+      retrievedAt: detectedAt,
+    };
+    const existing = await prisma.researchEvent.findUnique({
+      where: { research_event_dedupe: { projectId, source: "COINGECKO", sourceId } },
+    });
+    if (existing) {
+      await prisma.researchEvent.update({ where: { id: existing.id }, data });
+      updated += 1;
+    } else {
+      await prisma.researchEvent.create({ data: { ...data, projectId, sourceId } });
+      created += 1;
+    }
+  }
+
+  return { created, updated, skipped: 0 };
+}
+
+export async function collectTokenMarketListingCatalysts(
+  projectId: string,
+  slug: string,
+  previousMarkets: TokenMarketKey[],
+  tickers: NormalizedMarketTicker[],
+): Promise<void> {
+  try {
+    const result = await persistTokenMarketListingCatalysts(projectId, previousMarkets, tickers);
+    logEventsEvent("events.listing_catalysts_collected", { slug, projectId, ...result });
+  } catch (err) {
+    logEventsEvent("events.listing_catalysts_failed", {
       slug,
       projectId,
       error: err instanceof Error ? err.message : "Erro desconhecido",

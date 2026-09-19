@@ -361,7 +361,9 @@ export interface EventIntelligenceOverview {
 }
 
 const RECENT_EVENTS_WINDOW_DAYS = 30;
-const KNOWN_EVENT_CATEGORIES = ["FUNDING", "SECURITY_INCIDENT"] as const;
+// Sprint 17: LISTING/DELISTING adicionados (Catalyst derivado do diff de TokenMarket, ver
+// CATALYSTS_RISKS_SOURCE_AUDIT.md seção 7, item 1).
+const KNOWN_EVENT_CATEGORIES = ["FUNDING", "SECURITY_INCIDENT", "LISTING", "DELISTING"] as const;
 
 export async function getEventIntelligenceOverview(): Promise<EventIntelligenceOverview> {
   const researched = await getResearchedProjects();

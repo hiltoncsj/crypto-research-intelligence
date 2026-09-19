@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "@crypto-research/database";
-import type { NormalizedSecurityIncident } from "@crypto-research/defi-data";
+import type {
+  NormalizedMarketTicker,
+  NormalizedSecurityIncident,
+} from "@crypto-research/defi-data";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -10,7 +13,9 @@ import {
   getRisks,
   persistFundingCatalysts,
   persistSecurityIncidentRisks,
+  persistTokenMarketListingCatalysts,
 } from "../src/events-repository";
+import type { TokenMarketKey } from "../src/profile-repository";
 
 // Sprint 15 — Catalysts + Risks. Integração real contra o Postgres do docker-compose (mesma
 // filosofia anti-mock das demais suítes de *-repository). A lista de hacks é construída aqui
@@ -188,6 +193,96 @@ describe("events-repository (Prisma, integração real)", () => {
     it("nunca lança", async () => {
       const { id: projectId } = await seedProject();
       await expect(collectFundingCatalysts(projectId, "some-slug")).resolves.toBeUndefined();
+    });
+  });
+
+  // Sprint 17 — Catalyst LISTING/DELISTING derivado do diff de TokenMarket (zero coleta nova).
+  describe("persistTokenMarketListingCatalysts", () => {
+    function marketKey(overrides: Partial<TokenMarketKey> = {}): TokenMarketKey {
+      return {
+        exchangeId: "binance",
+        exchangeName: "Binance",
+        baseSymbol: "ABC",
+        targetSymbol: "USDT",
+        ...overrides,
+      };
+    }
+
+    function ticker(overrides: Partial<NormalizedMarketTicker> = {}): NormalizedMarketTicker {
+      return {
+        source: "COINGECKO",
+        retrievedAt: "2026-09-19T00:00:00.000Z",
+        coinGeckoId: "abc-token",
+        exchangeId: "binance",
+        exchangeName: "Binance",
+        baseSymbol: "ABC",
+        targetSymbol: "USDT",
+        marketType: "SPOT",
+        tradeUrl: "https://example.com/trade",
+        volumeUsd: 1_000_000,
+        lastPriceUsd: 1.5,
+        sourceTimestamp: "2026-09-19T00:00:00.000Z",
+        ...overrides,
+      };
+    }
+
+    it("primeira coleta (previousMarkets vazio): nenhum evento — não fabrica histórico", async () => {
+      const { id: projectId } = await seedProject();
+      const result = await persistTokenMarketListingCatalysts(projectId, [], [ticker()]);
+      expect(result).toEqual({ created: 0, updated: 0, skipped: 0 });
+      expect(await getCatalysts(projectId)).toHaveLength(0);
+    });
+
+    it("mercado novo (presente agora, ausente antes): cria Catalyst LISTING", async () => {
+      const { id: projectId } = await seedProject();
+      // previous já contém o mesmo mercado do ticker (não sai), só o novo (coinbase) é adição.
+      const previous = [marketKey()];
+      const result = await persistTokenMarketListingCatalysts(projectId, previous, [
+        ticker(),
+        ticker({ exchangeId: "coinbase", exchangeName: "Coinbase" }),
+      ]);
+      expect(result.created).toBe(1);
+
+      const catalysts = await getCatalysts(projectId);
+      expect(catalysts).toHaveLength(1);
+      expect(catalysts[0].category).toBe("LISTING");
+      expect(catalysts[0].kind).toBe("CATALYST");
+      expect(catalysts[0].confidence).toBe("MEDIUM");
+      expect(catalysts[0].title).toContain("Coinbase");
+    });
+
+    it("mercado que sumiu (presente antes, ausente agora): cria Catalyst DELISTING", async () => {
+      const { id: projectId } = await seedProject();
+      const previous = [
+        marketKey(),
+        marketKey({ exchangeId: "coinbase", exchangeName: "Coinbase" }),
+      ];
+      const result = await persistTokenMarketListingCatalysts(projectId, previous, [ticker()]);
+      expect(result.created).toBe(1);
+
+      const catalysts = await getCatalysts(projectId);
+      expect(catalysts).toHaveLength(1);
+      expect(catalysts[0].category).toBe("DELISTING");
+      expect(catalysts[0].title).toContain("Coinbase");
+    });
+
+    it("mesmo conjunto de mercados antes e depois: nenhum evento", async () => {
+      const { id: projectId } = await seedProject();
+      const previous = [marketKey()];
+      const result = await persistTokenMarketListingCatalysts(projectId, previous, [ticker()]);
+      expect(result).toEqual({ created: 0, updated: 0, skipped: 0 });
+    });
+
+    it("idempotente dentro do mesmo dia — rodar de novo não duplica o evento LISTING", async () => {
+      const { id: projectId } = await seedProject();
+      const previous = [marketKey()];
+      const tickers = [ticker(), ticker({ exchangeId: "coinbase", exchangeName: "Coinbase" })];
+
+      await persistTokenMarketListingCatalysts(projectId, previous, tickers);
+      const second = await persistTokenMarketListingCatalysts(projectId, previous, tickers);
+      expect(second.created).toBe(0);
+      expect(second.updated).toBe(1);
+      expect(await getCatalysts(projectId)).toHaveLength(1);
     });
   });
 });

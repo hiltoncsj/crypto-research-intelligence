@@ -441,6 +441,57 @@ Ver `SPRINT_16_IMPLEMENTATION_REPORT.md` para o relatório completo. Resumo:
 
 ---
 
+## 2.19 Sprint 18 — Catalyst/Risk Source Intelligence Audit + LISTING/DELISTING (implementado,
+
+escopo real limitado)
+
+Nota de nomenclatura: o documento de especificação recebido para esta sprint se autodenomina
+"Sprint 17" (Catalyst & Risk Source Expansion), mas "Sprint 17" já havia sido usado no histórico
+de commits deste repositório para a tradução PT-BR da descrição do projeto + exibição de
+Perfil/Mercados na página do projeto (ver `CLAUDE.md`). Por isso esta sprint é numerada 18 aqui,
+mantendo a sequência cronológica real do projeto.
+
+- **Fase de auditoria primeiro, sem implementar nada até concluí-la** (regra explícita do
+  documento de especificação) — resultado em `CATALYSTS_RISKS_SOURCE_AUDIT.md`, que estende
+  `CATALYSTS_RISKS_ARCHITECTURE.md` (Sprint 15) para as 18 categorias de Catalyst e 19 de Risk
+  que ainda não tinham fonte real investigada.
+- Confirmado por leitura direta do código (não suposição): `EventImpactEngine` já trata
+  `category` como `string` puro em toda a pipeline — nenhuma mudança foi necessária lá para
+  novas categorias.
+- **Única categoria nova implementada**: Catalyst `LISTING`/`DELISTING`, derivada do diff de
+  `TokenMarket` (já coletado desde o Sprint 13) entre duas Research Runs consecutivas — **zero
+  chamada HTTP nova**. `packages/research-engine/src/profile-repository.ts`
+  (`getCurrentTokenMarketKeys`, lê o estado ANTES do upsert da run corrente) +
+  `packages/research-engine/src/events-repository.ts`
+  (`persistTokenMarketListingCatalysts`/`collectTokenMarketListingCatalysts`).
+  - Na primeira coleta de um projeto (nenhum `TokenMarket` anterior), nenhum evento é emitido —
+    listar tudo como "LISTING" seria fabricar histórico nunca presenciado.
+  - `eventDate` reflete o momento em que a mudança foi PERCEBIDA (retrievedAt da run atual), não
+    a data real do anúncio da exchange — granularidade limitada ao intervalo entre Research
+    Runs. `confidence` é `MEDIUM` (não `HIGH`) exatamente por essa imprecisão de data.
+  - `sourceId` inclui o dia da detecção (`stableSourceId("LISTING"|"DELISTING", key,
+YYYY-MM-DD)`) — permite um novo evento se o mesmo mercado for delistado e relistado depois,
+    sem duplicar dentro do mesmo dia.
+  - Conectado ao pipeline (`pipeline.ts`, dentro do bloco condicional a `coinGeckoId`, logo antes
+    do upsert de `TokenMarket`) e ao Dashboard (`KNOWN_EVENT_CATEGORIES` em
+    `dashboard-intelligence.ts`). Project Report e `getCatalysts`/`getRisks` já são genéricos por
+    categoria — nenhuma mudança necessária.
+- **Categorias avaliadas e rejeitadas nesta sprint** (ver seção 6 do audit para a justificativa
+  completa de cada uma): `TOKEN_UNLOCK` (toda fonte estruturada real é paga — DefiLlama Pro
+  $300/mês, Tokenomist.ai, Messari); `PROTOCOL_UPGRADE`/`MAINNET`/`TESTNET` via GitHub Releases e
+  `GOVERNANCE` via Snapshot.org (ambas APIs reais/gratuitas/testadas, mas exigem curadoria manual
+  de `Project.githubRepo`/`Project.snapshotSpace` que não existe hoje — decisão de produto
+  pendente de aprovação do usuário, não implementada); `LISTING` via anúncio oficial de exchange
+  (Binance não tem API pública oficial, a não-oficial retorna 403); as demais 12 categorias de
+  Catalyst e 17 de Risk (sem fonte estruturada, automatizável e auto-identificável encontrada —
+  a maioria dos Risks restantes é de natureza estrutural/contínua, não um "fato pontual com
+  data", o que não se encaixa no modelo `ResearchEvent` sem uma decisão de produto separada).
+- **Fora desta sprint** (deliberado): nenhuma fonte paga adicionada sem aprovação explícita de
+  custo, nenhuma curadoria manual de mapeamento projeto→repositório/space, nenhum scraping
+  frágil, nenhuma fabricação de cobertura para "completar" o enum `ResearchEventCategory`.
+
+---
+
 ## 3. O que falta
 
 ### 3.1 Fora de escopo (deliberadamente, confirmado ausente no código)

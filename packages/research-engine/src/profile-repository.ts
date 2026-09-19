@@ -213,6 +213,27 @@ export async function persistTokenMarkets(
   return { upserted, rejectedInvalid };
 }
 
+export interface TokenMarketKey {
+  exchangeId: string;
+  exchangeName: string;
+  baseSymbol: string;
+  targetSymbol: string;
+}
+
+/**
+ * Estado ATUAL de `TokenMarket` (antes do upsert da coleta corrente) — usado pelo Sprint 17
+ * (Catalyst LISTING/DELISTING) para diffar contra os tickers recém-buscados. Precisa ser
+ * chamado ANTES de `persistTokenMarkets`/`collectTokenMarkets`, senão o "antes" já seria igual
+ * ao "depois". Nenhuma chamada HTTP — só leitura do que já está persistido.
+ */
+export async function getCurrentTokenMarketKeys(projectId: string): Promise<TokenMarketKey[]> {
+  const rows = await prisma.tokenMarket.findMany({
+    where: { projectId },
+    select: { exchangeId: true, exchangeName: true, baseSymbol: true, targetSymbol: true },
+  });
+  return rows;
+}
+
 export interface TokenMarketView {
   exchangeName: string;
   baseSymbol: string;

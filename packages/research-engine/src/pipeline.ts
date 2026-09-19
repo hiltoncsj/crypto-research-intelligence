@@ -17,7 +17,11 @@ import {
   computeAndPersistCapitalScore,
   type CapitalScoreRecordResult,
 } from "./capital-score-repository";
-import { collectFundingCatalysts, collectSecurityIncidentRisks } from "./events-repository";
+import {
+  collectFundingCatalysts,
+  collectSecurityIncidentRisks,
+  collectTokenMarketListingCatalysts,
+} from "./events-repository";
 import {
   persistFundingRounds,
   persistTokenSummary,
@@ -27,7 +31,11 @@ import { advanceProjectCard, recordProjectDiscovered, setCardBlocked } from "./k
 import { logEventsEvent, logPipelineEvent } from "./logger";
 import { collectMarketDataForProject } from "./market-data-repository";
 import { calculateWindowMetrics, type WindowMetrics } from "./metrics";
-import { collectProjectProfile, collectTokenMarkets } from "./profile-repository";
+import {
+  collectProjectProfile,
+  collectTokenMarkets,
+  getCurrentTokenMarketKeys,
+} from "./profile-repository";
 import {
   computeAndPersistFundamentalScore,
   type FundamentalScoreRecordResult,
@@ -252,6 +260,18 @@ export async function runPipelineForProject(
         project.coinGeckoId,
         supplyResult.raw.fetchedAt,
       );
+
+      // Sprint 17 (Catalyst LISTING/DELISTING): captura o estado ANTES do upsert desta run —
+      // senão o "antes" e o "depois" ficariam idênticos. Zero chamada HTTP nova (só leitura do
+      // que já está persistido); ver CATALYSTS_RISKS_SOURCE_AUDIT.md seção 7, item 1.
+      const previousTokenMarkets = await getCurrentTokenMarketKeys(project.id);
+      await collectTokenMarketListingCatalysts(
+        project.id,
+        slug,
+        previousTokenMarkets,
+        normalizedTickers,
+      );
+
       await collectTokenMarkets(project.id, slug, project.coinGeckoId, normalizedTickers);
     }
 
