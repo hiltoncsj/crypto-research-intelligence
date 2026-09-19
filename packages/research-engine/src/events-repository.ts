@@ -10,6 +10,7 @@ import {
 import type {
   NormalizedMarketTicker,
   NormalizedSecurityIncident,
+  NormalizedTokenUnlockEvent,
 } from "@crypto-research/defi-data";
 
 import { logEventsEvent } from "./logger";
@@ -282,6 +283,80 @@ export async function collectTokenMarketListingCatalysts(
     logEventsEvent("events.listing_catalysts_collected", { slug, projectId, ...result });
   } catch (err) {
     logEventsEvent("events.listing_catalysts_failed", {
+      slug,
+      projectId,
+      error: err instanceof Error ? err.message : "Erro desconhecido",
+    });
+  }
+}
+
+// ------------------------------------------------------------------------------------------
+// Risk — Token Unlocks (Sprint 18). PRONTO, MAS NÃO ATIVADO por padrão: só produz eventos
+// quando uma API key real da DefiLlama Pro é configurada em Settings (provider
+// `DEFILLAMA_PRO`, ver `resolveDefiLlamaProApiKey` em pipeline.ts) — sem key, o pipeline nunca
+// chama `getTokenUnlocks`, então esta função nunca é invocada. Confidence é sempre MEDIUM, nunca
+// HIGH: a estrutura da fonte (DefiLlama Pro emissions) foi construída a partir de documentação
+// pública, nunca validada contra um payload real (ver comentário de `RawDefiLlamaEmissions` em
+// types.ts) — marcar HIGH seria reivindicar uma confiança que ainda não foi verificada.
+// ------------------------------------------------------------------------------------------
+
+export async function persistTokenUnlockRisks(
+  projectId: string,
+  defillamaId: string | null,
+  unlocks: NormalizedTokenUnlockEvent[],
+): Promise<EventsPersistResult> {
+  if (!defillamaId) return { created: 0, updated: 0, skipped: 0 };
+
+  let created = 0;
+  let updated = 0;
+
+  for (const unlock of unlocks) {
+    const sourceId = stableSourceId(defillamaId, unlock.eventDate, unlock.category ?? "");
+    const amountLabel =
+      unlock.tokenAmount !== null ? `${unlock.tokenAmount.toLocaleString("en-US")} tokens` : null;
+    const data = {
+      kind: ResearchEventKind.RISK,
+      category: "TOKEN_UNLOCK" as ResearchEventCategory,
+      title: unlock.category ? `Unlock — ${unlock.category}` : "Token Unlock",
+      description:
+        [unlock.description, amountLabel].filter((v): v is string => v !== null).join(" — ") ||
+        null,
+      eventDate: new Date(unlock.eventDate),
+      publishedAt: null,
+      source: "DEFILLAMA_PRO",
+      sourceUrl: null,
+      impact: ResearchEventImpactDimension.TOKENOMICS,
+      status: ResearchEventStatus.SCHEDULED, // agenda de unlock é conhecida com antecedência
+      confidence: ResearchEventConfidence.MEDIUM, // fonte nunca validada ao vivo — ver comentário acima
+      retrievedAt: new Date(unlock.retrievedAt),
+    };
+
+    const existing = await prisma.researchEvent.findUnique({
+      where: { research_event_dedupe: { projectId, source: "DEFILLAMA_PRO", sourceId } },
+    });
+    if (existing) {
+      await prisma.researchEvent.update({ where: { id: existing.id }, data });
+      updated += 1;
+    } else {
+      await prisma.researchEvent.create({ data: { ...data, projectId, sourceId } });
+      created += 1;
+    }
+  }
+
+  return { created, updated, skipped: 0 };
+}
+
+export async function collectTokenUnlockRisks(
+  projectId: string,
+  slug: string,
+  defillamaId: string | null,
+  unlocks: NormalizedTokenUnlockEvent[],
+): Promise<void> {
+  try {
+    const result = await persistTokenUnlockRisks(projectId, defillamaId, unlocks);
+    logEventsEvent("events.token_unlocks_collected", { slug, projectId, ...result });
+  } catch (err) {
+    logEventsEvent("events.token_unlocks_failed", {
       slug,
       projectId,
       error: err instanceof Error ? err.message : "Erro desconhecido",

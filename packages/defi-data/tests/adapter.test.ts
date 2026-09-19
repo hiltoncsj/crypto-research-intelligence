@@ -9,6 +9,7 @@ import {
   normalizeProtocol,
   normalizeProtocolList,
   normalizeTokenSummary,
+  normalizeTokenUnlocks,
   normalizeTvlHistory,
 } from "../src/adapter.js";
 
@@ -467,5 +468,57 @@ describe("normalizeCoinGeckoTickers (Sprint 13)", () => {
   it("retorna array vazio quando a resposta não tem tickers", () => {
     expect(normalizeCoinGeckoTickers({ id: "x" }, "x", retrievedAt)).toEqual([]);
     expect(normalizeCoinGeckoTickers(null, "x", retrievedAt)).toEqual([]);
+  });
+});
+
+// Sprint 18 (TOKEN_UNLOCK — PRONTO, NÃO ATIVADO): a fixture abaixo é construída a partir da
+// estrutura DOCUMENTADA publicamente da DefiLlama Pro API, NUNCA de um payload real observado
+// (nenhuma key paga foi adquirida). O objetivo destes testes é garantir que o normalizador
+// nunca lança e descarta itens malformados individualmente — não é uma garantia de que o
+// formato real da API é exatamente este. Validar contra um payload real é obrigatório antes de
+// confiar cegamente no resultado, no dia em que uma key for configurada.
+describe("normalizeTokenUnlocks (Sprint 18 — PRONTO, não ativado)", () => {
+  const retrievedAt = "2026-09-19T00:00:00.000Z";
+
+  it("normaliza eventos com noOfTokens em array (soma) e em número (direto)", () => {
+    const raw = {
+      events: [
+        { timestamp: 1_700_000_000, noOfTokens: [100, 50], category: "Team", description: "Cliff" },
+        { timestamp: 1_710_000_000, noOfTokens: 25, category: "Ecosystem", description: null },
+      ],
+    };
+    const result = normalizeTokenUnlocks(raw, "114", retrievedAt);
+    expect(result).toHaveLength(2);
+    expect(result[0]?.tokenAmount).toBe(150);
+    expect(result[0]?.category).toBe("Team");
+    expect(result[1]?.tokenAmount).toBe(25);
+    expect(result[1]?.description).toBeNull();
+  });
+
+  it("descarta itens sem timestamp válido, sem lançar", () => {
+    const raw = {
+      events: [
+        { noOfTokens: 10, category: "Team" },
+        { timestamp: "not-a-number", noOfTokens: 10 },
+        { timestamp: 1_700_000_000, noOfTokens: 10, category: "Valid" },
+      ],
+    };
+    const result = normalizeTokenUnlocks(raw, "114", retrievedAt);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.category).toBe("Valid");
+  });
+
+  it("payload nulo, malformado ou sem 'events': retorna array vazio, nunca lança", () => {
+    expect(normalizeTokenUnlocks(null, "114", retrievedAt)).toEqual([]);
+    expect(normalizeTokenUnlocks({}, "114", retrievedAt)).toEqual([]);
+    expect(normalizeTokenUnlocks({ events: "not-an-array" }, "114", retrievedAt)).toEqual([]);
+    expect(normalizeTokenUnlocks("garbage", "114", retrievedAt)).toEqual([]);
+  });
+
+  it("noOfTokens ausente/inválido: tokenAmount fica null, evento ainda é criado", () => {
+    const raw = { events: [{ timestamp: 1_700_000_000, category: "Advisors" }] };
+    const result = normalizeTokenUnlocks(raw, "114", retrievedAt);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.tokenAmount).toBeNull();
   });
 });

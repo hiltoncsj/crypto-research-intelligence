@@ -107,9 +107,17 @@ percebida (não a data real do anúncio), `confidence` MEDIUM por essa imprecis�
 coleta de um projeto (sem `TokenMarket` anterior) nenhum evento é emitido, para não fabricar
 histórico. `PROTOCOL_UPGRADE`/`MAINNET`/`TESTNET` (GitHub Releases) e `GOVERNANCE` (Snapshot.org)
 têm APIs reais e gratuitas mas exigem curadoria manual de `Project.githubRepo`/
-`Project.snapshotSpace` (não implementado, decisão de produto pendente); `TOKEN_UNLOCK` só tem
-fonte paga (DefiLlama Pro). Demais 12 categorias de Catalyst e 17 de Risk seguem sem fonte
-adequada — `NOT_IMPLEMENTED` documentado, nunca fabricado.
+`Project.snapshotSpace` (não implementado, decisão de produto pendente). `TOKEN_UNLOCK` só tem
+fonte paga (DefiLlama Pro, $300/mês) mas, a pedido explícito do usuário ("deixar pronto, mas não
+usar agora"), foi implementado como Risk **PRONTO, NÃO ATIVADO**: `getTokenUnlocks`/
+`pingDefiLlamaPro` em `packages/defi-data/src/client.ts`,
+`persistTokenUnlockRisks`/`collectTokenUnlockRisks` em `events-repository.ts`,
+`resolveDefiLlamaProApiKey` em `pipeline.ts`, terceiro provider real em Settings
+(`DEFILLAMA_PRO`, `apps/web/src/lib/connections.ts`) — sem uma key configurada lá, o código
+nunca executa, zero custo. A estrutura do payload foi montada a partir de documentação pública,
+nunca validada contra uma resposta real — validar antes de confiar no resultado quando ativado
+(ver `SPRINT_17_IMPLEMENTATION_REPORT.md`). Demais 12 categorias de Catalyst e 17 de Risk seguem
+sem fonte adequada — `NOT_IMPLEMENTED` documentado, nunca fabricado.
 
 Monorepo `apps/web` mais `packages/{database,defi-data,research-engine,scoring-engine,queue,shared}`
 

@@ -476,9 +476,22 @@ YYYY-MM-DD)`) — permite um novo evento se o mesmo mercado for delistado e reli
     do upsert de `TokenMarket`) e ao Dashboard (`KNOWN_EVENT_CATEGORIES` em
     `dashboard-intelligence.ts`). Project Report e `getCatalysts`/`getRisks` já são genéricos por
     categoria — nenhuma mudança necessária.
+- **Risk `TOKEN_UNLOCK` — PRONTO, NÃO ATIVADO** (adicionado depois, a pedido explícito do
+  usuário: "deixar pronto, mas não irei usar agora"). Única fonte estruturada real é paga
+  (DefiLlama Pro, US$300/mês) — o código de coleta/normalização/persistência foi implementado
+  por completo e conectado ao pipeline (`packages/defi-data/src/client.ts` `getTokenUnlocks`,
+  `packages/research-engine/src/events-repository.ts`
+  `persistTokenUnlockRisks`/`collectTokenUnlockRisks`,
+  `packages/research-engine/src/pipeline.ts` `resolveDefiLlamaProApiKey`), mas o gatilho único
+  para ativação é uma `ApiConnection(provider="DEFILLAMA_PRO")` com secret configurado em
+  Settings (terceiro provider real ao lado de DEFILLAMA/COINGECKO,
+  `apps/web/src/lib/connections.ts`) — sem essa key, zero chamada HTTP, zero custo. A estrutura
+  do payload foi construída a partir de documentação pública da DefiLlama Pro API, **nunca
+  validada contra uma resposta real** (nenhuma key paga foi adquirida) — precisa ser conferida
+  no dia em que uma key for configurada, antes de confiar cegamente no resultado. Ver
+  `SPRINT_17_IMPLEMENTATION_REPORT.md` para os detalhes completos.
 - **Categorias avaliadas e rejeitadas nesta sprint** (ver seção 6 do audit para a justificativa
-  completa de cada uma): `TOKEN_UNLOCK` (toda fonte estruturada real é paga — DefiLlama Pro
-  $300/mês, Tokenomist.ai, Messari); `PROTOCOL_UPGRADE`/`MAINNET`/`TESTNET` via GitHub Releases e
+  completa de cada uma): `PROTOCOL_UPGRADE`/`MAINNET`/`TESTNET` via GitHub Releases e
   `GOVERNANCE` via Snapshot.org (ambas APIs reais/gratuitas/testadas, mas exigem curadoria manual
   de `Project.githubRepo`/`Project.snapshotSpace` que não existe hoje — decisão de produto
   pendente de aprovação do usuário, não implementada); `LISTING` via anúncio oficial de exchange

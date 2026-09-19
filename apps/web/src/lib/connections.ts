@@ -1,5 +1,5 @@
 import { prisma } from "@crypto-research/database";
-import { pingCoinGecko, pingDefiLlama } from "@crypto-research/defi-data";
+import { pingCoinGecko, pingDefiLlama, pingDefiLlamaPro } from "@crypto-research/defi-data";
 import { decrypt, encrypt, maskSecret } from "@crypto-research/shared";
 
 // Sprint 2 (Fase 14-16): camada de serviço para api_connections. Mantém a lógica de
@@ -8,12 +8,19 @@ import { decrypt, encrypt, maskSecret } from "@crypto-research/shared";
 
 // Sprint 11 (integração CoinGecko): segundo provider real — usa o mesmo mecanismo de
 // ApiConnection (secret opcional) que já existia reservado para isso.
-export const SUPPORTED_PROVIDERS = ["DEFILLAMA", "COINGECKO"] as const;
+// Sprint 18 (TOKEN_UNLOCK — PRONTO, NÃO ATIVADO): terceiro provider real, mas diferente dos
+// outros dois — EXIGE key (não é keyless, ver `KEYLESS_PROVIDERS` abaixo). Sem uma key aqui, o
+// Research Worker nunca chama a DefiLlama Pro (ver `resolveDefiLlamaProApiKey` em
+// packages/research-engine/src/pipeline.ts) — nenhum custo é incorrido até o usuário configurar
+// isto explicitamente.
+export const SUPPORTED_PROVIDERS = ["DEFILLAMA", "COINGECKO", "DEFILLAMA_PRO"] as const;
 export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
 // Providers que não exigem API key (seção 9 do plano de implementação): a conexão existe
 // para rastrear status/teste, mas encryptedSecret pode ficar nulo. CoinGecko funciona sem key
-// no tier gratuito — uma key opcional (Pro) só aumenta o rate limit.
+// no tier gratuito — uma key opcional (Pro) só aumenta o rate limit. DEFILLAMA_PRO NÃO está
+// nesta lista de propósito: sem secret, a run com essa conexão fica NOT_CONFIGURED (nunca testa
+// a API paga sem uma key real).
 const KEYLESS_PROVIDERS = new Set<SupportedProvider>(["DEFILLAMA", "COINGECKO"]);
 
 export interface SanitizedConnection {
@@ -138,8 +145,16 @@ export async function testConnection(id: string): Promise<SanitizedConnection> {
       secret = null;
     }
   }
+  // DEFILLAMA_PRO não é keyless (ver KEYLESS_PROVIDERS acima) — o guard de "Nenhum secret
+  // configurado" já retornou mais acima quando não há encryptedSecret, então chegar aqui com
+  // `secret === null` só acontece se o decrypt falhou (secret corrompido); `pingDefiLlamaPro`
+  // trata isso como qualquer outra chamada HTTP sem key: erro reportado, nunca lançado.
   const raw =
-    connection.provider === "COINGECKO" ? await pingCoinGecko(secret) : await pingDefiLlama();
+    connection.provider === "COINGECKO"
+      ? await pingCoinGecko(secret)
+      : connection.provider === "DEFILLAMA_PRO"
+        ? await pingDefiLlamaPro(secret ?? "")
+        : await pingDefiLlama();
 
   const status = raw.error ? "ERROR" : "REAL";
   const updated = await prisma.apiConnection.update({

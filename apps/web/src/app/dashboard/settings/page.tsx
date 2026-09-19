@@ -15,9 +15,18 @@ interface Connection {
 // Sprint 11: CoinGecko passou a ser um provider real (packages/defi-data/src/coingecko-client.ts,
 // já ligado ao pipeline) — `implemented: false` aqui estava desatualizado e escondia a conexão
 // já suportada pelo backend (SUPPORTED_PROVIDERS em apps/web/src/lib/connections.ts).
+// Sprint 18: DEFILLAMA_PRO — provider real (packages/defi-data/src/client.ts, getTokenUnlocks),
+// mas PRONTO e NÃO ATIVADO até uma key ser configurada aqui. Diferente de DEFILLAMA/COINGECKO,
+// não é keyless: sem secret, a conexão fica NOT_CONFIGURED e o Research Worker nunca chama a
+// API paga (ver CATALYSTS_RISKS_SOURCE_AUDIT.md — TOKEN_UNLOCK).
 const KNOWN_PROVIDERS = [
   { provider: "DEFILLAMA", name: "DefiLlama", implemented: true },
   { provider: "COINGECKO", name: "CoinGecko", implemented: true },
+  {
+    provider: "DEFILLAMA_PRO",
+    name: "DefiLlama Pro (Token Unlocks — opcional, pago)",
+    implemented: true,
+  },
   { provider: "CRYPTORANK", name: "CryptoRank", implemented: false },
   { provider: "DUNE", name: "Dune", implemented: false },
   { provider: "NANSEN", name: "Nansen", implemented: false },

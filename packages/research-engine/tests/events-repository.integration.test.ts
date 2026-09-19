@@ -3,6 +3,7 @@ import { prisma } from "@crypto-research/database";
 import type {
   NormalizedMarketTicker,
   NormalizedSecurityIncident,
+  NormalizedTokenUnlockEvent,
 } from "@crypto-research/defi-data";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -14,6 +15,7 @@ import {
   persistFundingCatalysts,
   persistSecurityIncidentRisks,
   persistTokenMarketListingCatalysts,
+  persistTokenUnlockRisks,
 } from "../src/events-repository";
 import type { TokenMarketKey } from "../src/profile-repository";
 
@@ -283,6 +285,71 @@ describe("events-repository (Prisma, integração real)", () => {
       expect(second.created).toBe(0);
       expect(second.updated).toBe(1);
       expect(await getCatalysts(projectId)).toHaveLength(1);
+    });
+  });
+
+  // Sprint 18 — TOKEN_UNLOCK, PRONTO mas NÃO ATIVADO (ver comentário em events-repository.ts).
+  // Fixture aqui simula o formato JÁ NORMALIZADO (packages/defi-data), consistente com o padrão
+  // do resto desta suíte (persistSecurityIncidentRisks também recebe uma lista já normalizada,
+  // não faz uma chamada real) — o que se testa é a persistência/dedupe, não a fonte externa.
+  describe("persistTokenUnlockRisks", () => {
+    function unlock(
+      overrides: Partial<NormalizedTokenUnlockEvent> = {},
+    ): NormalizedTokenUnlockEvent {
+      return {
+        source: "DEFILLAMA_PRO",
+        retrievedAt: "2026-09-19T00:00:00.000Z",
+        defillamaId: "114",
+        eventDate: "2026-10-01T00:00:00.000Z",
+        tokenAmount: 1_000_000,
+        category: "Team",
+        description: "Cliff unlock",
+        ...overrides,
+      };
+    }
+
+    it("cria um Risk TOKEN_UNLOCK com confidence MEDIUM (fonte nunca validada ao vivo)", async () => {
+      const { id: projectId, defillamaId } = await seedProject("114");
+      const result = await persistTokenUnlockRisks(projectId, defillamaId, [unlock()]);
+      expect(result.created).toBe(1);
+
+      const risks = await getRisks(projectId);
+      expect(risks).toHaveLength(1);
+      expect(risks[0]?.category).toBe("TOKEN_UNLOCK");
+      expect(risks[0]?.kind).toBe("RISK");
+      expect(risks[0]?.confidence).toBe("MEDIUM");
+      expect(risks[0]?.status).toBe("SCHEDULED");
+    });
+
+    it("projeto sem defillamaId conhecido (null): skip, nunca lança", async () => {
+      const { id: projectId } = await seedProject();
+      const result = await persistTokenUnlockRisks(projectId, null, [unlock()]);
+      expect(result).toEqual({ created: 0, updated: 0, skipped: 0 });
+    });
+
+    it("idempotente — mesmo evento (mesma data+categoria) não duplica", async () => {
+      const { id: projectId, defillamaId } = await seedProject("114");
+      await persistTokenUnlockRisks(projectId, defillamaId, [unlock()]);
+      const second = await persistTokenUnlockRisks(projectId, defillamaId, [unlock()]);
+      expect(second.created).toBe(0);
+      expect(second.updated).toBe(1);
+      expect(await getRisks(projectId)).toHaveLength(1);
+    });
+
+    it("eventos com categorias/datas diferentes do mesmo projeto: dois Risks distintos", async () => {
+      const { id: projectId, defillamaId } = await seedProject("114");
+      const result = await persistTokenUnlockRisks(projectId, defillamaId, [
+        unlock({ category: "Team" }),
+        unlock({ category: "Investors", eventDate: "2026-11-01T00:00:00.000Z" }),
+      ]);
+      expect(result.created).toBe(2);
+      expect(await getRisks(projectId)).toHaveLength(2);
+    });
+
+    it("lista vazia: nenhum evento criado", async () => {
+      const { id: projectId, defillamaId } = await seedProject("114");
+      const result = await persistTokenUnlockRisks(projectId, defillamaId, []);
+      expect(result).toEqual({ created: 0, updated: 0, skipped: 0 });
     });
   });
 });

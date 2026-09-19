@@ -4,6 +4,7 @@ import {
   getHacks,
   getProtocolFeesOrRevenue,
   getProtocolTvlHistory,
+  getTokenUnlocks,
   normalizeCoinGeckoProfile,
   normalizeCoinGeckoTickers,
   normalizeFundingRounds,
@@ -21,6 +22,7 @@ import {
   collectFundingCatalysts,
   collectSecurityIncidentRisks,
   collectTokenMarketListingCatalysts,
+  collectTokenUnlockRisks,
 } from "./events-repository";
 import {
   persistFundingRounds,
@@ -167,6 +169,10 @@ export async function runPipelineForProject(
   // Sprint 15 (Catalysts + Risks): buscado UMA VEZ por Research Run em
   // `runManualResearchPipeline` (GET /hacks, cross-protocolo) — nunca refeito por projeto.
   securityIncidents: NormalizedSecurityIncident[] = [],
+  // Sprint 18 (TOKEN_UNLOCK — PRONTO, NÃO ATIVADO): resolvida uma única vez por batch, igual
+  // `coinGeckoApiKey`. `undefined`/`null` = sem key configurada em Settings (provider
+  // `DEFILLAMA_PRO`) — nesse caso `getTokenUnlocks` NUNCA é chamado para nenhum projeto.
+  defillamaProApiKey?: string | null,
 ): Promise<ProjectPipelineResult> {
   logPipelineEvent("project_processing_started", { slug });
   // Sprint 7: precisa estar acessível no catch — se o projeto já foi upsertado quando uma
@@ -294,6 +300,30 @@ export async function runPipelineForProject(
     // projeto) por `defillamaId` exato. Isolamento total — nunca falha o projeto/run inteiro.
     await collectFundingCatalysts(project.id, slug);
     await collectSecurityIncidentRisks(project.id, slug, project.defillamaId, securityIncidents);
+
+    // Sprint 18 (TOKEN_UNLOCK — PRONTO, NÃO ATIVADO): só chama a DefiLlama Pro quando uma key
+    // real está configurada em Settings (provider DEFILLAMA_PRO). Sem key, `defillamaProApiKey`
+    // é `undefined`/`null` e este bloco inteiro é pulado — nenhuma chamada HTTP, nenhum custo,
+    // nenhum evento criado. Isolamento total, igual ao resto do bloco de eventos acima.
+    if (defillamaProApiKey && project.defillamaId) {
+      try {
+        const unlocksResult = await getTokenUnlocks(project.defillamaId, defillamaProApiKey);
+        await collectTokenUnlockRisks(
+          project.id,
+          slug,
+          project.defillamaId,
+          unlocksResult.normalized ?? [],
+        );
+      } catch (err) {
+        logEventsEvent("events.token_unlocks_failed", {
+          slug,
+          projectId: project.id,
+          error: err instanceof Error ? err.message : "Erro desconhecido",
+        });
+      }
+    } else if (!defillamaProApiKey) {
+      logEventsEvent("events.token_unlocks_skipped_no_api_key", { slug, projectId: project.id });
+    }
 
     const tvlPersist = await persistSnapshotSeries(
       "TVL",
@@ -485,6 +515,25 @@ async function resolveCoinGeckoApiKey(): Promise<string | null> {
   }
 }
 
+/**
+ * Sprint 18 (TOKEN_UNLOCK — PRONTO, NÃO ATIVADO): mesmo padrão de `resolveCoinGeckoApiKey`, mas
+ * para o provider `DEFILLAMA_PRO`. Diferente do CoinGecko, ESTE provider não é keyless — sem
+ * `ApiConnection` configurada (ou sem secret), `getTokenUnlocks` nunca é chamado em lugar
+ * nenhum do pipeline (ver uso abaixo). Configurar a key em Settings é o único gatilho para
+ * ativar a coleta — nenhuma flag adicional, nenhum código morto para reativar.
+ */
+async function resolveDefiLlamaProApiKey(): Promise<string | null> {
+  const connection = await prisma.apiConnection.findUnique({
+    where: { provider: "DEFILLAMA_PRO" },
+  });
+  if (!connection?.encryptedSecret) return null;
+  try {
+    return decrypt(connection.encryptedSecret);
+  } catch {
+    return null;
+  }
+}
+
 export async function runManualResearchPipeline(
   // Sprint 8: sem default — todo chamador precisa decidir explicitamente quais slugs
   // processar (o Worker resolve isso via Discovery + Top 10 Selection antes de chamar esta
@@ -495,6 +544,7 @@ export async function runManualResearchPipeline(
   const startedAt = new Date().toISOString();
   const results: ProjectPipelineResult[] = [];
   const coinGeckoApiKey = await resolveCoinGeckoApiKey();
+  const defillamaProApiKey = await resolveDefiLlamaProApiKey();
 
   // Sprint 15 (Catalysts + Risks): GET /hacks buscado UMA VEZ para a Research Run inteira
   // (seção 28: "não fazer N+1 external requests") — falha aqui nunca aborta a run, só deixa a
@@ -533,6 +583,7 @@ export async function runManualResearchPipeline(
       options.researchRunId,
       coinGeckoApiKey,
       securityIncidents,
+      defillamaProApiKey,
     );
     results.push(result);
 

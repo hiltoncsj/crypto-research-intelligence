@@ -10,8 +10,10 @@ import type {
   NormalizedTimeSeriesPoint,
   NormalizedTokenSummary,
   NormalizedTokenSupply,
+  NormalizedTokenUnlockEvent,
   RawCoinGeckoMarketChart,
   RawCoinGeckoMarketData,
+  RawDefiLlamaEmissions,
   RawDefiLlamaFeesSummary,
   RawDefiLlamaHack,
   RawDefiLlamaProtocol,
@@ -426,4 +428,49 @@ export function normalizeSecurityIncidents(
       };
     })
     .filter((item): item is NormalizedSecurityIncident => item !== null);
+}
+
+/**
+ * Sprint 18 — TOKEN_UNLOCK, PRONTO mas NÃO ATIVADO (ver comentário de
+ * `RawDefiLlamaEmissions`/`NormalizedTokenUnlockEvent` em types.ts). Construído a partir da
+ * estrutura publicamente documentada da DefiLlama Pro API, NUNCA validado contra um payload
+ * real — por isso é deliberadamente tolerante: qualquer evento com `timestamp` ausente/inválido
+ * é descartado individualmente (nunca lança, nunca fabrica uma data), e um payload com formato
+ * totalmente inesperado retorna lista vazia em vez de erro. `noOfTokens` documentado varia entre
+ * array (por sub-categoria) e número — somamos quando é array.
+ */
+export function normalizeTokenUnlocks(
+  raw: unknown,
+  defillamaId: string,
+  retrievedAt: string,
+): NormalizedTokenUnlockEvent[] {
+  const payload = raw as RawDefiLlamaEmissions | null;
+  if (!payload || !Array.isArray(payload.events)) return [];
+
+  return payload.events
+    .map((e): NormalizedTokenUnlockEvent | null => {
+      if (typeof e?.timestamp !== "number" || !Number.isFinite(e.timestamp)) return null;
+
+      let tokenAmount: number | null = null;
+      if (Array.isArray(e.noOfTokens)) {
+        const sum = e.noOfTokens.reduce(
+          (acc, v) => (typeof v === "number" && Number.isFinite(v) ? acc + v : acc),
+          0,
+        );
+        tokenAmount = e.noOfTokens.length > 0 ? sum : null;
+      } else if (typeof e.noOfTokens === "number" && Number.isFinite(e.noOfTokens)) {
+        tokenAmount = e.noOfTokens;
+      }
+
+      return {
+        source: "DEFILLAMA_PRO",
+        retrievedAt,
+        defillamaId,
+        eventDate: unixSecondsToIso(e.timestamp),
+        tokenAmount,
+        category: nonEmptyString(e.category ?? null),
+        description: nonEmptyString(e.description ?? null),
+      };
+    })
+    .filter((item): item is NormalizedTokenUnlockEvent => item !== null);
 }

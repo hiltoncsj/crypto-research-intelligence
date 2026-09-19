@@ -129,7 +129,10 @@ export type EventsEvent =
   | "events.funding_catalysts_failed"
   | "events.hacks_fetch_failed"
   | "events.listing_catalysts_collected"
-  | "events.listing_catalysts_failed";
+  | "events.listing_catalysts_failed"
+  | "events.token_unlocks_collected"
+  | "events.token_unlocks_failed"
+  | "events.token_unlocks_skipped_no_api_key";
 
 export function logEventsEvent(event: EventsEvent, data: Record<string, unknown> = {}): void {
   console.log(JSON.stringify({ event, timestamp: new Date().toISOString(), ...data }));

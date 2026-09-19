@@ -277,3 +277,36 @@ export interface NormalizedSecurityIncident {
   chains: string[];
   sourceUrl: string | null;
 }
+
+// Sprint 18 (Catalyst/Risk Source Audit): TOKEN_UNLOCK — deixado PRONTO, mas NÃO ativado
+// (ver CATALYSTS_RISKS_SOURCE_AUDIT.md item "TOKEN_UNLOCK"). A única fonte estruturada real
+// encontrada é a DefiLlama Pro API (pro-api.llama.fi, US$300/mês), documentada publicamente
+// como `GET /{API_KEY}/api/emissions/{protocol}` — mas NUNCA testada ao vivo neste
+// repositório (nenhuma key paga foi adquirida, consistente com a política do projeto de nunca
+// pagar por uma fonte sem aprovação explícita do usuário). Este tipo e o normalizador
+// correspondente (`normalizeTokenUnlocks`) são construídos a partir da estrutura documentada
+// publicamente, não de uma resposta real observada — por isso são deliberadamente TOLERANTES
+// (campos ausentes/tipos inesperados são descartados item a item, nunca lançam) e devem ser
+// VALIDADOS contra um payload real antes de confiar cegamente no resultado, no dia em que uma
+// API key for configurada em Settings.
+export interface RawDefiLlamaUnlockEvent {
+  timestamp?: number | null; // unix seconds, documentado
+  noOfTokens?: number[] | number | null; // formato documentado varia (array por categoria ou total)
+  category?: string | null;
+  description?: string | null;
+}
+
+export interface RawDefiLlamaEmissions {
+  events?: RawDefiLlamaUnlockEvent[] | null;
+  documentedAllocation?: unknown;
+}
+
+export interface NormalizedTokenUnlockEvent {
+  source: "DEFILLAMA_PRO";
+  retrievedAt: string;
+  defillamaId: string;
+  eventDate: string; // ISO
+  tokenAmount: number | null;
+  category: string | null;
+  description: string | null;
+}

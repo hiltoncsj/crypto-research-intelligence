@@ -3,6 +3,7 @@ import {
   normalizeProtocol,
   normalizeProtocolList,
   normalizeSecurityIncidents,
+  normalizeTokenUnlocks,
   normalizeTvlHistory,
 } from "./adapter";
 import { fetchJsonWithRetry, type RawCollectorResponse } from "./http-client";
@@ -11,6 +12,7 @@ import type {
   NormalizedProtocolSummary,
   NormalizedProtocolTvlHistory,
   NormalizedSecurityIncident,
+  NormalizedTokenUnlockEvent,
 } from "./types";
 
 // Sprint 2 (Fase 9): Collector DefiLlama isolado. Único domínio permitido — allowlist
@@ -19,6 +21,13 @@ import type {
 const DEFILLAMA_BASE_URL = "https://api.llama.fi";
 const ALLOWED_HOSTS = ["api.llama.fi"];
 const PROVIDER = "DEFILLAMA";
+
+// Sprint 18: DefiLlama Pro — domínio separado, SÓ usado quando uma API key é configurada em
+// Settings (provider "DEFILLAMA_PRO"). Nunca chamado sem key (ver `getTokenUnlocks`/
+// `pingDefiLlamaPro` abaixo — ambos recebem a key como parâmetro obrigatório, não opcional).
+const DEFILLAMA_PRO_BASE_URL = "https://pro-api.llama.fi";
+const DEFILLAMA_PRO_ALLOWED_HOSTS = ["pro-api.llama.fi"];
+const PRO_PROVIDER = "DEFILLAMA_PRO";
 
 export interface DefiLlamaCollectorResult<T> {
   raw: RawCollectorResponse<unknown>;
@@ -143,4 +152,46 @@ export async function getHacks(): Promise<DefiLlamaCollectorResult<NormalizedSec
   }
 
   return { raw, normalized: normalizeSecurityIncidents(raw.payload, raw.fetchedAt) };
+}
+
+/**
+ * Sprint 18 (TOKEN_UNLOCK — PRONTO, NÃO ATIVADO): `GET /{API_KEY}/api/emissions/{protocol}` da
+ * DefiLlama Pro, estrutura documentada publicamente (nunca chamada ao vivo neste repositório —
+ * exige uma API key paga que não foi adquirida). `apiKey` é obrigatório (não opcional) de
+ * propósito: este client NUNCA deve ser chamado sem uma key real — a camada de
+ * research-engine (`resolveDefiLlamaProApiKey`) já garante isso, retornando cedo quando não há
+ * `ApiConnection` configurada para o provider `DEFILLAMA_PRO`.
+ */
+export async function getTokenUnlocks(
+  defillamaId: string,
+  apiKey: string,
+): Promise<DefiLlamaCollectorResult<NormalizedTokenUnlockEvent[]>> {
+  const endpoint = `/api/emissions/${encodeURIComponent(defillamaId)}`;
+  const raw = await fetchJsonWithRetry(
+    `${DEFILLAMA_PRO_BASE_URL}/${encodeURIComponent(apiKey)}${endpoint}`,
+    {
+      provider: PRO_PROVIDER,
+      endpoint,
+      allowlist: DEFILLAMA_PRO_ALLOWED_HOSTS,
+    },
+  );
+
+  if (raw.error || raw.payload === null) {
+    return { raw, normalized: null };
+  }
+
+  return {
+    raw,
+    normalized: normalizeTokenUnlocks(raw.payload, defillamaId, raw.fetchedAt),
+  };
+}
+
+/**
+ * "Test Connection" para o provider DEFILLAMA_PRO (Settings) — mesma chamada leve usada pelo
+ * resto do sistema para validar uma key sem processar dado de verdade. Usa um `defillamaId`
+ * qualquer só para confirmar que a key autentica (200) vs. rejeita (401/403) — não fica preso a
+ * nenhum projeto específico.
+ */
+export async function pingDefiLlamaPro(apiKey: string): Promise<RawCollectorResponse<unknown>> {
+  return getTokenUnlocks("1", apiKey).then((result) => result.raw);
 }
