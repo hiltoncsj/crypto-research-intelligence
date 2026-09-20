@@ -8,6 +8,7 @@ import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from "
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH_BYTES = 12; // recomendado para GCM
 const KEY_LENGTH_BYTES = 32; // AES-256
+const AUTH_TAG_LENGTH_BYTES = 16; // 128 bits, tamanho completo do GCM
 const CURRENT_VERSION = 1;
 
 export class EncryptionConfigError extends Error {}
@@ -110,12 +111,20 @@ export function decrypt(payload: string): string {
     throw new DecryptionError("Payload malformado (campos hex inválidos).");
   }
 
-  if (iv.length !== IV_LENGTH_BYTES || authTag.length === 0 || ciphertext.length === 0) {
+  // authTag DEVE ter exatamente 16 bytes: tags truncadas são aceitas pelo decipher do Node e
+  // enfraquecem a autenticação do GCM (auditoria: 4/8/12/15 bytes eram aceitos).
+  if (
+    iv.length !== IV_LENGTH_BYTES ||
+    authTag.length !== AUTH_TAG_LENGTH_BYTES ||
+    ciphertext.length === 0
+  ) {
     throw new DecryptionError("Payload malformado (tamanhos de campo inválidos).");
   }
 
   try {
-    const decipher = createDecipheriv(ALGORITHM, key, iv);
+    const decipher = createDecipheriv(ALGORITHM, key, iv, {
+      authTagLength: AUTH_TAG_LENGTH_BYTES,
+    });
     decipher.setAuthTag(authTag);
     const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     return plaintext.toString("utf8");

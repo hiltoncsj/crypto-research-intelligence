@@ -54,6 +54,24 @@ describe("crypto service (AES-256-GCM)", () => {
     expect(() => decrypt(tampered)).toThrow(DecryptionError);
   });
 
+  // Regressão da auditoria: o tamanho da authTag precisa ser exatamente 16 bytes. Uma tag truncada
+  // (prefixo da tag verdadeira) enfraquece a autenticação do GCM se o decipher a aceitar.
+  it.each([1, 4, 8, 12, 15])("4b. authTag truncada para %i byte(s) é rejeitada", (bytes) => {
+    const payload = encrypt(FAKE_SECRET);
+    const parsed = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+    parsed.authTag = parsed.authTag.slice(0, bytes * 2);
+    const tampered = Buffer.from(JSON.stringify(parsed), "utf8").toString("base64");
+    expect(() => decrypt(tampered)).toThrow(DecryptionError);
+  });
+
+  it("4c. authTag maior que 16 bytes é rejeitada", () => {
+    const payload = encrypt(FAKE_SECRET);
+    const parsed = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+    parsed.authTag = parsed.authTag + "00";
+    const tampered = Buffer.from(JSON.stringify(parsed), "utf8").toString("base64");
+    expect(() => decrypt(tampered)).toThrow(DecryptionError);
+  });
+
   it("5. alteração do IV falha", () => {
     const payload = encrypt(FAKE_SECRET);
     const parsed = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
