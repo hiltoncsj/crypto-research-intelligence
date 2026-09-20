@@ -2,8 +2,10 @@
 
 > Resumo do que está implementado e do que falta no Crypto Research Intelligence,
 > gerado a partir de auditoria direta do código (schema, rotas de API, packages,
-> testes e infraestrutura) em 2026-09-16. Este arquivo é um snapshot pontual —
-> não é atualizado automaticamente conforme o código evolui.
+> testes e infraestrutura) em 2026-09-16, e estendido sprint a sprint (seções 2.10–2.24,
+> última atualização em 2026-09-19, Sprint 23). As seções 2.1–2.9 e 3.x são o snapshot
+> original de 2026-09-16 e podem estar defasadas. Este arquivo não é atualizado
+> automaticamente conforme o código evolui.
 
 ---
 
@@ -11,7 +13,8 @@
 
 O projeto está muito além do estágio descrito no `CRYPTO_RESEARCH_IMPLEMENTATION_PLAN.md`
 original (que ainda diz "aguardando aprovação, nada implementado"). Na prática, os
-Sprints 1–7 citados no `CLAUDE.md` estão implementados e testados: autenticação,
+Sprints 1–23 estão implementados e testados (as seções 2.1–2.9 descrevem o núcleo dos
+Sprints 1–7; os sprints seguintes estão em 2.10–2.24): autenticação,
 gestão de API Keys criptografadas, coleta real de dados da DefiLlama, pipeline de
 Research Run assíncrono via BullMQ, três engines de score, Research Trace, Rankings
 e um Kanban Pull System completo. Além disso, o código já foi **além** do que o
@@ -663,20 +666,35 @@ reclassified: 28, unchanged: 318`), 0 remanescentes com categoria incorreta.
 
 ---
 
-## 2.24 Sprint 23 — Discourse Governance Intelligence (EM ANDAMENTO, pausado por incidente)
+## 2.24 Sprint 23 — Discourse Governance Intelligence (implementado)
 
-Código implementado e com testes unitários/integração passando (ver detalhes completos em
-`SPRINT_23_HANDOFF_TEMP.md`, se ainda existir — arquivo temporário de retomada, apagar depois de
-lido/consumido): `Project.discourseForumUrl`, `packages/defi-data/src/discourse-client.ts`,
-validação anti-SSRF (`isValidDiscourseForumUrl`), normalização, persistência
-(`persistDiscourseTopicCatalysts`), integração no pipeline, API/UI de curadoria. **Ainda não
-concluído**: validação ao vivo com coleta real, suíte de regressão completa, documentação
-(`DISCOURSE_SOURCE_ARCHITECTURE.md`, `SPRINT_23_IMPLEMENTATION_REPORT.md`), commit/push.
+Fóruns Discourse oficiais como fonte de eventos de governança, complementar a Snapshot (votações)
+e GitHub Releases (changelogs). Ver `DISCOURSE_SOURCE_ARCHITECTURE.md` e
+`SPRINT_23_IMPLEMENTATION_REPORT.md`.
 
-Pausado por um incidente real: perda total de dados no Postgres local (0 linhas em todas as 29
-tabelas, incluindo os 7 projetos reais + 2.323 eventos dos Sprints 21/22) — ver novo gotcha em
-`CLAUDE.md` ("ATUALIZAÇÃO Sprint 23"). Causa provável: instabilidade Docker Desktop/WSL2 no
-Windows. Usuário optou por reiniciar a máquina antes de continuar.
+- `Project.discourseForumUrl` (curadoria manual via `PATCH /api/projects/[slug]`, validação
+  anti-SSRF em `isValidDiscourseForumUrl`, host não fixo), `packages/defi-data/src/
+  discourse-client.ts` (`getDiscourseTopics`, keyless, 2 páginas / 40 tópicos por run),
+  `normalizeDiscourseTopic`, `persistDiscourseTopicCatalysts`, bloco isolado no pipeline.
+- **Achado principal:** a Classification Engine (Sprint 20) **não serve** para texto de fórum.
+  Auditoria real de 240 tópicos (6 fóruns): 32 casaram alguma regra e cerca de metade eram falsos
+  positivos claros (ex.: "Delegate Platform" → `NEW_CHAIN`). Decisão: Discourse é fonte
+  estruturada — `GOVERNANCE` / `STRUCTURED_SOURCE`, `confidence` MEDIUM, `status` UNKNOWN, sem
+  chamar a engine. Nenhuma regra foi alterada. (A auditoria foi sobre título + evidência curta,
+  não sobre o corpo completo dos posts.)
+- **Dados reais:** 7 projetos, 6 fóruns (`stargate-v2` sem fórum Discourse conhecido); 240 eventos
+  Discourse, 1.890 Snapshot, 433 GitHub (idêntico ao Sprint 22).
+- **Incidente de infraestrutura:** o Postgres local perdeu todos os dados (29 tabelas, 2.323+
+  eventos) por provável instabilidade Docker Desktop/WSL2 — ver gotcha em `CLAUDE.md`. Os 7
+  projetos foram re-curados a partir dos relatórios dos Sprints 21/22 (mappings **não**
+  reverificados ao vivo nesta sprint).
+- **Dívida técnica:** a coleta ainda busca o corpo de cada tópico (1 request por tópico, até 40 por
+  fórum), que a decisão acima não usa mais — é o que torna a coleta lenta (~1–2 min por fórum).
+- Não validado: Event Impact e Dashboard com os eventos Discourse.
+- Resultado: **440 testes passando, 0 falhando**, typecheck/lint/build limpos.
+- Fora do Sprint 23: `.github/workflows/ci.yml` disparava só em push para `main` (branch
+  inexistente); corrigido para `master` no commit `febe170`. Primeira execução do CI em push ainda
+  não conferida.
 
 ---
 
@@ -736,7 +754,7 @@ seções como desatualizadas) para não confundir quem ler o documento depois.
 
 ### 3.4 Limpeza pendente (organização, não funcionalidade)
 
-- Arquivo solto `bash.exe.stackdump` na raiz do repositório (resíduo de crash) e diretório `.scratch/` vazio — candidatos a remoção quando a auditoria for concluída.
+- Arquivos soltos na raiz do repositório: `bash.exe.stackdump` (resíduo de crash) e `ajuste.png`; diretório `.scratch/` vazio. `.claude/scheduled_tasks.lock` e `apps/web/tsconfig.tsbuildinfo` estão rastreados pelo git mas são artefatos locais. Candidatos a remoção/`.gitignore`.
 
 ---
 
@@ -806,9 +824,8 @@ Nenhuma dessas 4 é bloqueante entre si — podem ser feitas em qualquer ordem, 
    ou pelo menos marcar as seções obsoletas, para não confundir leitura futura (seção 3.3 acima).
 4. **Limpeza de organização** (baixo risco, baixo esforço): remover `bash.exe.stackdump` e
    `.scratch/` vazio da raiz; decidir sobre containerizar worker/scheduler no
-   `docker-compose.yml`; configurar o remoto GitHub e fazer `git push` (o repositório git já foi
-   inicializado e o primeiro commit já existe, Sprint 16 — falta só o remoto) para o CI começar a
-   rodar de verdade. (O bug de ordem de FK do `funding-and-capital.integration.test.ts` já foi
+   `docker-compose.yml`; (o remoto GitHub já está configurado e o `push` funciona; o CI passou a disparar em
+   push para `master` no commit `febe170` — conferir a primeira execução na aba Actions). (O bug de ordem de FK do `funding-and-capital.integration.test.ts` já foi
    revalidado e não reproduzido no Sprint 12 — ver seção 3.2.)
 
 Fora de escopo deliberado, sem mudança de status (ver seção 3.1): Second Brain completo,
