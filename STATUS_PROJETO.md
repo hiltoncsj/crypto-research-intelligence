@@ -754,7 +754,7 @@ seções como desatualizadas) para não confundir quem ler o documento depois.
 
 ### 3.4 Limpeza pendente (organização, não funcionalidade)
 
-- Arquivos soltos na raiz do repositório: `bash.exe.stackdump` (resíduo de crash) e `ajuste.png`; diretório `.scratch/` vazio. `.claude/scheduled_tasks.lock` e `apps/web/tsconfig.tsbuildinfo` estão rastreados pelo git mas são artefatos locais. Candidatos a remoção/`.gitignore`.
+- Artefatos locais (`.claude/scheduled_tasks.lock`, `*.tsbuildinfo`, `bash.exe.stackdump`) já estão no `.gitignore` e fora do índice (commit `d6b7bd3`). `ajuste.png` na raiz é uma imagem de referência de um ajuste de layout já corrigido — mantida de propósito. Nada mais pendente de limpeza nesta seção.
 
 ---
 
@@ -822,11 +822,12 @@ Nenhuma dessas 4 é bloqueante entre si — podem ser feitas em qualquer ordem, 
 3. **`CRYPTO_RESEARCH_IMPLEMENTATION_PLAN.md` desatualizado**: ainda descreve o repo como "Fase
    0, nada implementado" e lista Funding/Tokenomics/Unlocks como fora do MVP — vale reescrever
    ou pelo menos marcar as seções obsoletas, para não confundir leitura futura (seção 3.3 acima).
-4. **Limpeza de organização** (baixo risco, baixo esforço): remover `bash.exe.stackdump` e
-   `.scratch/` vazio da raiz; decidir sobre containerizar worker/scheduler no
-   `docker-compose.yml`; (o remoto GitHub já está configurado e o `push` funciona; o CI passou a disparar em
-   push para `master` no commit `febe170` — conferir a primeira execução na aba Actions). (O bug de ordem de FK do `funding-and-capital.integration.test.ts` já foi
-   revalidado e não reproduzido no Sprint 12 — ver seção 3.2.)
+4. **Limpeza de organização** (baixo risco, baixo esforço): decidir sobre containerizar
+   worker/scheduler no `docker-compose.yml`; conferir a primeira execução do CI em push para
+   `master` na aba Actions (o remoto GitHub e o `push` já funcionam, e o workflow passou a
+   disparar em `master` no commit `febe170`). Artefatos locais já estão no `.gitignore` (seção
+   3.4). (O bug de ordem de FK do `funding-and-capital.integration.test.ts` já foi revalidado e
+   não reproduzido no Sprint 12 — ver seção 3.2.)
 
 Fora de escopo deliberado, sem mudança de status (ver seção 3.1): Second Brain completo,
 Pine Script/Technical Score, Backtesting avançado, multi-tenant, Improvement Proposals
