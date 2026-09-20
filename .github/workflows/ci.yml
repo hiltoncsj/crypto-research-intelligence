@@ -27,7 +27,19 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      # packages/queue e /api/health têm testes reais contra Redis (mesma imagem do compose local).
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     env:
+      REDIS_URL: "redis://localhost:6379"
       DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/crypto_research?schema=public"
       # Chave de teste gerada só para o CI — não é usada em nenhum ambiente real.
       MASTER_ENCRYPTION_KEY: "1111111111111111111111111111111111111111111111111111111111111111"
