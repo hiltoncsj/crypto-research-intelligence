@@ -65,6 +65,34 @@ function assertAllowedDomain(url: string, allowlist: string[] | undefined): void
   }
 }
 
+// Auditoria (redirects): `fetch` segue redirects por padrão, então a allowlist (só checada na URL
+// inicial) podia ser contornada por um host permitido que respondesse 3xx para outro destino
+// (ex.: um endereço interno). Redirects são seguidos manualmente e CADA salto é revalidado contra
+// a mesma allowlist.
+const MAX_REDIRECTS = 3;
+
+async function fetchWithAllowedRedirects(
+  url: string,
+  init: { signal: AbortSignal; headers?: Record<string, string> },
+  allowlist: string[] | undefined,
+): Promise<Response> {
+  let current = url;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    const response = await fetch(current, { ...init, redirect: "manual" });
+    if (response.status < 300 || response.status >= 400) return response;
+    const location = response.headers.get("location");
+    if (!location) return response;
+    await response.body?.cancel().catch(() => undefined);
+    const next = new URL(location, current).toString();
+    assertAllowedDomain(next, allowlist);
+    current = next;
+  }
+  throw new HttpClientError(`Redirecionamentos demais (mais de ${MAX_REDIRECTS})`, {
+    retryable: false,
+    httpStatus: null,
+  });
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -93,7 +121,11 @@ export async function fetchJsonWithRetry<T = unknown>(
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(url, { signal: controller.signal, headers: options.headers });
+      const response = await fetchWithAllowedRedirects(
+        url,
+        { signal: controller.signal, headers: options.headers },
+        options.allowlist,
+      );
       lastStatus = response.status;
 
       if (!response.ok) {
