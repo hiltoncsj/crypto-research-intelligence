@@ -21,6 +21,9 @@ export interface FundamentalContext {
     active: ResearchEventView[]; // ANNOUNCED/ONGOING
     upcoming: ResearchEventView[]; // SCHEDULED
     completed: ResearchEventView[];
+    // Auditoria: status UNKNOWN (ex.: todo tópico Discourse) e CANCELLED não pertencem a nenhum dos
+    // três grupos acima e sumiam do contexto. Invariante: todo catalyst aparece em algum grupo.
+    other: ResearchEventView[];
   };
   risks: {
     identified: ResearchEventView[];
@@ -65,6 +68,7 @@ export async function computeFundamentalContext(
       active: catalysts.filter((c) => c.status === "ANNOUNCED" || c.status === "ONGOING"),
       upcoming: catalysts.filter((c) => c.status === "SCHEDULED"),
       completed: catalysts.filter((c) => c.status === "COMPLETED"),
+      other: catalysts.filter((c) => c.status === "UNKNOWN" || c.status === "CANCELLED"),
     },
     risks: {
       identified: risks,

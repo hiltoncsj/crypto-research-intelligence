@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@crypto-research/database";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { persistFundingCatalysts } from "../src/events-repository";
+import { persistDiscourseTopicCatalysts, persistFundingCatalysts } from "../src/events-repository";
 import { computeFundamentalContext } from "../src/fundamental-context";
 
 // Sprint 15 — Fundamental Context. Integração real contra o Postgres do docker-compose.
@@ -70,6 +70,45 @@ describe("computeFundamentalContext (Prisma, integração real)", () => {
     const context = await computeFundamentalContext(projectId, slug);
     expect(context.catalysts.completed).toHaveLength(1);
     expect(context.catalysts.completed[0].category).toBe("FUNDING");
+  });
+
+  // Regressão da auditoria: eventos com status UNKNOWN (todo tópico Discourse) ou CANCELLED não
+  // caíam em nenhum grupo e sumiam do contexto. Invariante: todo catalyst aparece em algum grupo.
+  it("catalysts com status UNKNOWN/CANCELLED não somem do contexto (grupo `other`)", async () => {
+    const { id: projectId, slug } = await seedProject();
+    await persistDiscourseTopicCatalysts(projectId, [
+      {
+        source: "DISCOURSE",
+        retrievedAt: new Date().toISOString(),
+        forumOrigin: "https://forum.example.org",
+        topicId: 1,
+        title: "Tópico de discussão",
+        bodyText: "texto",
+        url: "https://forum.example.org/t/1",
+        eventDate: new Date().toISOString(),
+        categoryId: 1,
+      },
+    ]);
+    await prisma.researchEvent.create({
+      data: {
+        projectId,
+        kind: "CATALYST",
+        category: "OTHER",
+        title: "Evento cancelado",
+        eventDate: new Date(),
+        source: "TEST",
+        sourceId: randomUUID(),
+        status: "CANCELLED",
+        confidence: "LOW",
+        impact: "GOVERNANCE",
+        retrievedAt: new Date(),
+      },
+    });
+
+    const context = await computeFundamentalContext(projectId, slug);
+    const { active, upcoming, completed, other } = context.catalysts;
+    expect(other.map((e) => e.status).sort()).toEqual(["CANCELLED", "UNKNOWN"]);
+    expect(active.length + upcoming.length + completed.length + other.length).toBe(2);
   });
 
   it("capital reflete computeFundingAggregates real (mesma fonte do Sprint 6, não duplicada)", async () => {
