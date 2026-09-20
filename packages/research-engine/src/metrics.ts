@@ -81,9 +81,10 @@ export function calculateGrowthForWindow(
   const sorted = [...series].sort(
     (a, b) => a.sourceTimestamp.getTime() - b.sourceTimestamp.getTime(),
   );
-  const lastEntry = sorted.length > 0 ? sorted[sorted.length - 1] : undefined;
-  const current = lastEntry ? lastEntry.valueUsd : null;
+  // Auditoria (look-ahead): "valor atual" é o último ponto ATÉ `asOf`, nunca o último da série
+  // inteira — senão um `asOf` histórico (Event Impact) usaria dados posteriores à data analisada.
   const day = 24 * 60 * 60 * 1000;
+  const current = findValueAt(sorted, asOf);
   const valueAgo = findValueAt(sorted, new Date(asOf.getTime() - days * day));
   return calculateGrowth(current, valueAgo);
 }
@@ -106,7 +107,8 @@ export function calculateGrowthWindowPair(
   );
   const day = 24 * 60 * 60 * 1000;
 
-  const currentValue = getCurrentValue(sorted);
+  // Auditoria (look-ahead): valor atual limitado a `asOf`, ver `calculateGrowthForWindow`.
+  const currentValue = findValueAt(sorted, asOf);
   const valueAtWindowStart = findValueAt(sorted, new Date(asOf.getTime() - days * day));
   const valueAtPreviousWindowStart = findValueAt(sorted, new Date(asOf.getTime() - 2 * days * day));
 

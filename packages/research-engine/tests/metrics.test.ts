@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { calculateGrowth, calculateWindowMetrics } from "../src/metrics";
+import {
+  calculateGrowth,
+  calculateGrowthForWindow,
+  calculateGrowthWindowPair,
+  calculateWindowMetrics,
+} from "../src/metrics";
 
 const day = 24 * 60 * 60 * 1000;
 
@@ -90,5 +95,38 @@ describe("calculateWindowMetrics", () => {
     const result = calculateWindowMetrics(series, asOf);
     // Para growth7d, o ponto de referência é o mais recente <= (asOf - 7d) => o de -10d (80)
     expect(result.growth7d).toBeCloseTo(25);
+  });
+});
+
+// Regressão da auditoria (look-ahead bias): com um `asOf` histórico, NENHUM ponto posterior ao
+// `asOf` pode influenciar o resultado. Antes, o "valor atual" era o último ponto da série inteira.
+describe("look-ahead: asOf histórico não usa dados posteriores", () => {
+  const asOf = new Date("2025-06-30T00:00:00Z");
+  const at = (daysFromAsOf: number, valueUsd: number) => ({
+    sourceTimestamp: new Date(asOf.getTime() + daysFromAsOf * day),
+    valueUsd,
+  });
+  // 100 há 30d, 110 em asOf (+10%); depois explode para 1000 e 5000 (dados FUTUROS ao asOf).
+  const series = [at(-60, 100), at(-30, 100), at(0, 110), at(20, 1000), at(90, 5000)];
+
+  it("calculateGrowthForWindow ignora pontos futuros", () => {
+    expect(calculateGrowthForWindow(series, 30, asOf)).toBeCloseTo(10);
+  });
+
+  it("resultado é idêntico com ou sem os pontos futuros na série", () => {
+    const withoutFuture = series.filter((p) => p.sourceTimestamp.getTime() <= asOf.getTime());
+    expect(calculateGrowthForWindow(series, 30, asOf)).toBe(
+      calculateGrowthForWindow(withoutFuture, 30, asOf),
+    );
+  });
+
+  it("calculateGrowthWindowPair ignora pontos futuros (current e previousComparable)", () => {
+    const pair = calculateGrowthWindowPair(series, 30, asOf);
+    expect(pair.current).toBeCloseTo(10); // 100 -> 110
+    expect(pair.previousComparable).toBeCloseTo(0); // 100 (-60d) -> 100 (-30d)
+  });
+
+  it("asOf antes do primeiro ponto: N/A, nunca um valor extrapolado", () => {
+    expect(calculateGrowthForWindow(series, 30, new Date(asOf.getTime() - 400 * day))).toBe("N/A");
   });
 });
