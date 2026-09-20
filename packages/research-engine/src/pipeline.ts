@@ -339,12 +339,24 @@ export async function runPipelineForProject(
     if (project.githubRepo) {
       try {
         const releasesResult = await getGithubReleases(project.githubRepo);
-        await collectGithubReleaseCatalysts(
-          project.id,
-          slug,
-          project.githubRepo,
-          releasesResult.normalized,
-        );
+        // Auditoria (observabilidade): fonte que falhou (normalized === null) é registrada com o
+        // erro real — antes virava "collected, created: 0", indistinguível de "sem novidades".
+        if (releasesResult.normalized === null) {
+          logEventsEvent("events.github_releases_failed", {
+            slug,
+            projectId: project.id,
+            githubRepo: project.githubRepo,
+            httpStatus: releasesResult.raw.httpStatus,
+            error: releasesResult.raw.error ?? "Resposta sem dados normalizados",
+          });
+        } else {
+          await collectGithubReleaseCatalysts(
+            project.id,
+            slug,
+            project.githubRepo,
+            releasesResult.normalized,
+          );
+        }
       } catch (err) {
         logEventsEvent("events.github_releases_failed", {
           slug,
@@ -360,12 +372,22 @@ export async function runPipelineForProject(
     if (project.snapshotSpace) {
       try {
         const proposalsResult = await getSnapshotProposals(project.snapshotSpace);
-        await collectSnapshotGovernanceCatalysts(
-          project.id,
-          slug,
-          project.snapshotSpace,
-          proposalsResult.normalized,
-        );
+        if (proposalsResult.normalized === null) {
+          logEventsEvent("events.snapshot_proposals_failed", {
+            slug,
+            projectId: project.id,
+            snapshotSpace: project.snapshotSpace,
+            httpStatus: proposalsResult.raw.httpStatus,
+            error: proposalsResult.raw.error ?? "Resposta sem dados normalizados",
+          });
+        } else {
+          await collectSnapshotGovernanceCatalysts(
+            project.id,
+            slug,
+            project.snapshotSpace,
+            proposalsResult.normalized,
+          );
+        }
       } catch (err) {
         logEventsEvent("events.snapshot_proposals_failed", {
           slug,
@@ -388,12 +410,22 @@ export async function runPipelineForProject(
     if (project.discourseForumUrl) {
       try {
         const topicsResult = await getDiscourseTopics(project.discourseForumUrl);
-        await collectDiscourseTopicCatalysts(
-          project.id,
-          slug,
-          project.discourseForumUrl,
-          topicsResult.normalized,
-        );
+        if (topicsResult.normalized === null) {
+          logEventsEvent("events.discourse_failed", {
+            slug,
+            projectId: project.id,
+            discourseForumUrl: project.discourseForumUrl,
+            httpStatus: topicsResult.raw.httpStatus,
+            error: topicsResult.raw.error ?? "Resposta sem dados normalizados",
+          });
+        } else {
+          await collectDiscourseTopicCatalysts(
+            project.id,
+            slug,
+            project.discourseForumUrl,
+            topicsResult.normalized,
+          );
+        }
       } catch (err) {
         logEventsEvent("events.discourse_failed", {
           slug,
