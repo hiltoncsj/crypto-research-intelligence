@@ -10,3 +10,8 @@ coverage/
 .DS_Store
 Thumbs.db
 packages/database/prisma/dev.db
+
+# Artefatos locais
+.claude/scheduled_tasks.lock
+*.tsbuildinfo
+*.stackdump
