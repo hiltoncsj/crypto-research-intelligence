@@ -34,6 +34,7 @@ export async function GET(_request: Request, context: { params: { slug: string }
 const patchSchema = z.object({
   githubRepo: z.string().min(1).max(200).nullable().optional(),
   snapshotSpace: z.string().min(1).max(200).nullable().optional(),
+  discourseForumUrl: z.string().min(1).max(300).nullable().optional(),
 });
 
 export async function PATCH(request: Request, context: { params: { slug: string } }) {

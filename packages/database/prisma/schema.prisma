@@ -99,6 +99,15 @@ model Project {
   // Sprint 19: curadoria MANUAL, formato "space.eth" ou slug equivalente (sem URL), validado por
   // regex. `null` = Snapshot GraphQL nunca é chamado para este projeto.
   snapshotSpace String? @map("snapshot_space")
+  // Sprint 23 (Discourse Governance Intelligence): mesma filosofia do Sprint 19 — campo direto
+  // em `Project` (não uma tabela `ProjectExternalIdentity` genérica), curadoria MANUAL, nunca
+  // inferida por nome. Diferente de `githubRepo`/`snapshotSpace`, aqui o host NÃO é fixo (cada
+  // projeto hospeda seu fórum Discourse em um domínio próprio — ex. governance.aave.com,
+  // gov.uniswap.org) — por isso o campo guarda a URL de ORIGEM completa (ex.
+  // "https://governance.aave.com"), validada (HTTPS only, sem IP privado/localhost, sem
+  // userinfo) antes de persistir, nunca aceita como URL arbitrária de request (ver
+  // DISCOURSE_SOURCE_ARCHITECTURE.md). `null` = Discourse nunca é chamado para este projeto.
+  discourseForumUrl String? @map("discourse_forum_url")
   status      ProjectStatus @default(DISCOVERED)
   // Sprint 8 (Project Discovery): preenchidos só quando o Project nasce do mecanismo de
   // descoberta automática (packages/research-engine/src/discovery.ts), nunca sobrescritos em

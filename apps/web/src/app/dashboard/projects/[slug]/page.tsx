@@ -25,6 +25,7 @@ interface ProjectIdentification {
   discoverySource: string | null;
   githubRepo: string | null;
   snapshotSpace: string | null;
+  discourseForumUrl: string | null;
 }
 
 interface ProjectClassification {
@@ -700,6 +701,9 @@ function ExternalIdentitySection({
 }) {
   const [githubRepo, setGithubRepo] = useState(identification.githubRepo ?? "");
   const [snapshotSpace, setSnapshotSpace] = useState(identification.snapshotSpace ?? "");
+  const [discourseForumUrl, setDiscourseForumUrl] = useState(
+    identification.discourseForumUrl ?? "",
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -713,6 +717,7 @@ function ExternalIdentitySection({
         body: JSON.stringify({
           githubRepo: githubRepo.trim() === "" ? null : githubRepo.trim(),
           snapshotSpace: snapshotSpace.trim() === "" ? null : snapshotSpace.trim(),
+          discourseForumUrl: discourseForumUrl.trim() === "" ? null : discourseForumUrl.trim(),
         }),
       });
       const body = await res.json();
@@ -734,8 +739,8 @@ function ExternalIdentitySection({
         Identidade Externa (curadoria manual)
       </h3>
       <p style={{ fontSize: 12, color: theme.textMuted, marginTop: 6 }}>
-        Nunca inferido por nome — só habilita a coleta de GitHub Releases / Snapshot Governance
-        quando preenchido explicitamente aqui.
+        Nunca inferido por nome — só habilita a coleta de GitHub Releases / Snapshot Governance /
+        Discourse quando preenchido explicitamente aqui.
       </p>
       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
         <label style={{ fontSize: 12 }}>
@@ -753,6 +758,15 @@ function ExternalIdentitySection({
             value={snapshotSpace}
             onChange={(e) => setSnapshotSpace(e.target.value)}
             placeholder="ex.: ens.eth"
+            style={{ display: "block", width: "100%", marginTop: 4, padding: 6, fontSize: 13 }}
+          />
+        </label>
+        <label style={{ fontSize: 12 }}>
+          Discourse forum URL (origem completa, HTTPS)
+          <input
+            value={discourseForumUrl}
+            onChange={(e) => setDiscourseForumUrl(e.target.value)}
+            placeholder="ex.: https://governance.aave.com"
             style={{ display: "block", width: "100%", marginTop: 4, padding: 6, fontSize: 13 }}
           />
         </label>

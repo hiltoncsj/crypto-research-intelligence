@@ -663,6 +663,23 @@ reclassified: 28, unchanged: 318`), 0 remanescentes com categoria incorreta.
 
 ---
 
+## 2.24 Sprint 23 — Discourse Governance Intelligence (EM ANDAMENTO, pausado por incidente)
+
+Código implementado e com testes unitários/integração passando (ver detalhes completos em
+`SPRINT_23_HANDOFF_TEMP.md`, se ainda existir — arquivo temporário de retomada, apagar depois de
+lido/consumido): `Project.discourseForumUrl`, `packages/defi-data/src/discourse-client.ts`,
+validação anti-SSRF (`isValidDiscourseForumUrl`), normalização, persistência
+(`persistDiscourseTopicCatalysts`), integração no pipeline, API/UI de curadoria. **Ainda não
+concluído**: validação ao vivo com coleta real, suíte de regressão completa, documentação
+(`DISCOURSE_SOURCE_ARCHITECTURE.md`, `SPRINT_23_IMPLEMENTATION_REPORT.md`), commit/push.
+
+Pausado por um incidente real: perda total de dados no Postgres local (0 linhas em todas as 29
+tabelas, incluindo os 7 projetos reais + 2.323 eventos dos Sprints 21/22) — ver novo gotcha em
+`CLAUDE.md` ("ATUALIZAÇÃO Sprint 23"). Causa provável: instabilidade Docker Desktop/WSL2 no
+Windows. Usuário optou por reiniciar a máquina antes de continuar.
+
+---
+
 ## 3. O que falta
 
 ### 3.1 Fora de escopo (deliberadamente, confirmado ausente no código)

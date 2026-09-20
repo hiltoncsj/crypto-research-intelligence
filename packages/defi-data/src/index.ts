@@ -7,3 +7,4 @@ export * from "./translate-client";
 export * from "./external-identity";
 export * from "./github-client";
 export * from "./snapshot-client";
+export * from "./discourse-client";

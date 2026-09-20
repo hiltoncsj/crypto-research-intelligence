@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "@crypto-research/database";
 import type {
+  NormalizedDiscourseTopic,
   NormalizedGithubRelease,
   NormalizedMarketTicker,
   NormalizedSecurityIncident,
@@ -10,12 +11,14 @@ import type {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  collectDiscourseTopicCatalysts,
   collectFundingCatalysts,
   collectGithubReleaseCatalysts,
   collectSecurityIncidentRisks,
   collectSnapshotGovernanceCatalysts,
   getCatalysts,
   getRisks,
+  persistDiscourseTopicCatalysts,
   persistFundingCatalysts,
   persistGithubReleaseCatalysts,
   persistSecurityIncidentRisks,
@@ -653,6 +656,75 @@ describe("events-repository (Prisma, integração real)", () => {
 
       const catalysts = await getCatalysts(projectId);
       expect(catalysts[0]?.category).toBe("FUNDING"); // intocado
+    });
+  });
+
+  // Sprint 23 — Discourse Governance Intelligence. Fixture consistente com o payload real
+  // confirmado ao vivo (packages/defi-data/tests/adapter.test.ts).
+  describe("persistDiscourseTopicCatalysts", () => {
+    function topic(overrides: Partial<NormalizedDiscourseTopic> = {}): NormalizedDiscourseTopic {
+      return {
+        source: "DISCOURSE",
+        retrievedAt: "2026-09-19T00:00:00.000Z",
+        forumOrigin: "https://governance.aave.com",
+        topicId: 25576,
+        title: "[Direct to AIP] Onboard USDe to Aave V4 Core Instance on Avalanche",
+        bodyText: "This proposal seeks to onboard USDe to the Aave V4 Core Instance.",
+        url: "https://governance.aave.com/t/onboard-usde/25576",
+        eventDate: "2026-09-01T10:12:44.876Z",
+        categoryId: 9,
+        ...overrides,
+      };
+    }
+
+    it("GOVERNANCE + STRUCTURED_SOURCE, nunca passa pela engine — mesmo com 'mainnet' no título", async () => {
+      const { id: projectId } = await seedProject();
+      const result = await persistDiscourseTopicCatalysts(projectId, [
+        topic({ title: "[ARFC] Deploy on Mainnet launch", topicId: 999 }),
+      ]);
+      expect(result.created).toBe(1);
+
+      const catalysts = await getCatalysts(projectId);
+      expect(catalysts).toHaveLength(1);
+      expect(catalysts[0]?.kind).toBe("CATALYST");
+      expect(catalysts[0]?.category).toBe("GOVERNANCE");
+      expect(catalysts[0]?.classificationMethod).toBe("STRUCTURED_SOURCE");
+      expect(catalysts[0]?.confidence).toBe("MEDIUM");
+      expect(catalysts[0]?.status).toBe("UNKNOWN"); // um tópico nunca é COMPLETED por si só
+    });
+
+    it("sourceId = topicId — idempotente, nunca duplica", async () => {
+      const { id: projectId } = await seedProject();
+      await persistDiscourseTopicCatalysts(projectId, [topic()]);
+      const second = await persistDiscourseTopicCatalysts(projectId, [topic()]);
+      expect(second.created).toBe(0);
+      expect(second.updated).toBe(1);
+      expect(await getCatalysts(projectId)).toHaveLength(1);
+    });
+
+    it("tópicos diferentes (topicId distinto): eventos distintos", async () => {
+      const { id: projectId } = await seedProject();
+      const result = await persistDiscourseTopicCatalysts(projectId, [
+        topic({ topicId: 1 }),
+        topic({ topicId: 2 }),
+      ]);
+      expect(result.created).toBe(2);
+    });
+
+    it("lista vazia: nenhum evento criado", async () => {
+      const { id: projectId } = await seedProject();
+      const result = await persistDiscourseTopicCatalysts(projectId, []);
+      expect(result).toEqual({ created: 0, updated: 0, skipped: 0 });
+    });
+  });
+
+  describe("collectDiscourseTopicCatalysts", () => {
+    it("sem discourseForumUrl (null): skip, nunca chama persist, nunca lança", async () => {
+      const { id: projectId } = await seedProject();
+      await expect(
+        collectDiscourseTopicCatalysts(projectId, "some-slug", null, []),
+      ).resolves.toBeUndefined();
+      expect(await getCatalysts(projectId)).toHaveLength(0);
     });
   });
 });

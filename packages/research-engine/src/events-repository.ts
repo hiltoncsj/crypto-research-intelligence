@@ -9,6 +9,7 @@ import {
   type ResearchEventCategory,
 } from "@crypto-research/database";
 import type {
+  NormalizedDiscourseTopic,
   NormalizedGithubRelease,
   NormalizedMarketTicker,
   NormalizedSecurityIncident,
@@ -655,6 +656,88 @@ export async function reclassifyExistingGithubEvents(
   }
 
   return { scanned: events.length, reclassified, unchanged };
+}
+
+// ------------------------------------------------------------------------------------------
+// Catalyst — Discourse Governance Topics (Sprint 23). Só chamado quando
+// `Project.discourseForumUrl` foi curado manualmente (ver DISCOURSE_SOURCE_ARCHITECTURE.md).
+//
+// Mesmo padrão do Snapshot (Sprint 20): fonte de GOVERNANÇA — a engine de classificação NUNCA é
+// chamada. Auditoria real (Sprint 23, 240 tópicos de 6 fóruns): as regras da engine, calibradas
+// para changelogs do GitHub, geraram ~50% de falsos positivos sobre os 32 tópicos que casaram
+// (ex.: "Delegate Platform" → NEW_CHAIN por frase incidental no boilerplate; proposta de deploy
+// → MAINNET). Um tópico de fórum é discussão/proposta, não um fato consumado — por isso
+// `status` UNKNOWN e `confidence` MEDIUM (existência do tópico é certa; o desfecho não).
+// ------------------------------------------------------------------------------------------
+
+export async function persistDiscourseTopicCatalysts(
+  projectId: string,
+  topics: NormalizedDiscourseTopic[],
+): Promise<EventsPersistResult> {
+  let created = 0;
+  let updated = 0;
+
+  for (const t of topics) {
+    const sourceId = String(t.topicId);
+    const data = {
+      kind: ResearchEventKind.CATALYST,
+      category: "GOVERNANCE" as ResearchEventCategory,
+      classificationMethod: ResearchEventClassificationMethod.STRUCTURED_SOURCE,
+      classificationRuleId: null,
+      classificationEvidence: null,
+      title: t.title,
+      description: null, // corpo do tópico NUNCA persistido cru
+      eventDate: new Date(t.eventDate),
+      publishedAt: null,
+      source: "DISCOURSE",
+      sourceUrl: t.url,
+      impact: ResearchEventImpactDimension.GOVERNANCE,
+      status: ResearchEventStatus.UNKNOWN, // um tópico de discussão nunca é COMPLETED por si só
+      confidence: ResearchEventConfidence.MEDIUM,
+      retrievedAt: new Date(t.retrievedAt),
+    };
+
+    const existing = await prisma.researchEvent.findUnique({
+      where: { research_event_dedupe: { projectId, source: "DISCOURSE", sourceId } },
+    });
+    if (existing) {
+      await prisma.researchEvent.update({ where: { id: existing.id }, data });
+      updated += 1;
+    } else {
+      await prisma.researchEvent.create({ data: { ...data, projectId, sourceId } });
+      created += 1;
+    }
+  }
+
+  return { created, updated, skipped: 0 };
+}
+
+export async function collectDiscourseTopicCatalysts(
+  projectId: string,
+  slug: string,
+  discourseForumUrl: string | null,
+  topics: NormalizedDiscourseTopic[] | null,
+): Promise<void> {
+  if (!discourseForumUrl) {
+    logEventsEvent("events.discourse_skipped_no_mapping", { slug, projectId });
+    return;
+  }
+  try {
+    const result = await persistDiscourseTopicCatalysts(projectId, topics ?? []);
+    logEventsEvent("events.discourse_collected", {
+      slug,
+      projectId,
+      discourseForumUrl,
+      ...result,
+    });
+  } catch (err) {
+    logEventsEvent("events.discourse_failed", {
+      slug,
+      projectId,
+      discourseForumUrl,
+      error: err instanceof Error ? err.message : "Erro desconhecido",
+    });
+  }
 }
 
 // ------------------------------------------------------------------------------------------

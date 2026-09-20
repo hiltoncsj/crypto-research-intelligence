@@ -4,6 +4,7 @@ import {
   normalizeCoinGeckoMarketChart,
   normalizeCoinGeckoProfile,
   normalizeCoinGeckoTickers,
+  normalizeDiscourseTopic,
   normalizeFeesSummary,
   normalizeFundingRounds,
   normalizeGithubReleases,
@@ -641,5 +642,73 @@ describe("normalizeSnapshotProposals (Sprint 19 — validado ao vivo)", () => {
     ];
     const result = normalizeSnapshotProposals(raw, "ens.eth", retrievedAt);
     expect(result[0]?.state).toBe("some-future-state");
+  });
+});
+
+// Sprint 23 — fixture baseada na resposta REAL de GET https://governance.aave.com/t/25576.json,
+// confirmada ao vivo em 2026-09-19 (ver comentário de RawDiscourseTopicDetail em types.ts).
+describe("normalizeDiscourseTopic (Sprint 23 — validado ao vivo)", () => {
+  const retrievedAt = "2026-09-19T00:00:00.000Z";
+  const stripHtml = (html: string) =>
+    html
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  it("normaliza um tópico real (campos confirmados via chamada ao vivo)", () => {
+    const raw = {
+      id: 25576,
+      title: "[Direct to AIP] Onboard USDe to Aave V4 Core Instance on Avalanche",
+      created_at: "2026-09-01T10:12:44.799Z",
+      slug: "direct-to-aip-onboard-usde-to-aave-v4-core-instance-on-avalanche",
+      category_id: 9,
+      post_stream: {
+        posts: [
+          {
+            cooked: "<p>Summary</p><p>This proposal seeks to onboard USDe.</p>",
+            created_at: "2026-09-01T10:12:44.876Z",
+          },
+        ],
+      },
+    };
+    const result = normalizeDiscourseTopic(
+      raw,
+      "https://governance.aave.com",
+      retrievedAt,
+      stripHtml,
+    );
+    expect(result).not.toBeNull();
+    expect(result?.topicId).toBe(25576);
+    expect(result?.eventDate).toBe("2026-09-01T10:12:44.876Z"); // do primeiro post, não do tópico
+    expect(result?.bodyText).toBe("Summary This proposal seeks to onboard USDe.");
+    expect(result?.url).toBe(
+      "https://governance.aave.com/t/direct-to-aip-onboard-usde-to-aave-v4-core-instance-on-avalanche/25576",
+    );
+    expect(result?.categoryId).toBe(9);
+  });
+
+  it("sem post_stream: eventDate cai para created_at do tópico, bodyText null", () => {
+    const raw = {
+      id: 1,
+      title: "Título simples",
+      created_at: "2026-01-01T00:00:00.000Z",
+      slug: "titulo-simples",
+    };
+    const result = normalizeDiscourseTopic(
+      raw,
+      "https://forum.example.org",
+      retrievedAt,
+      stripHtml,
+    );
+    expect(result?.eventDate).toBe("2026-01-01T00:00:00.000Z");
+    expect(result?.bodyText).toBeNull();
+  });
+
+  it("descarta payload malformado (sem id/title/slug/created_at), nunca lança", () => {
+    expect(
+      normalizeDiscourseTopic({ title: "x" }, "https://x.com", retrievedAt, stripHtml),
+    ).toBeNull();
+    expect(normalizeDiscourseTopic(null, "https://x.com", retrievedAt, stripHtml)).toBeNull();
+    expect(normalizeDiscourseTopic("garbage", "https://x.com", retrievedAt, stripHtml)).toBeNull();
   });
 });

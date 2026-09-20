@@ -1,6 +1,7 @@
 import { prisma } from "@crypto-research/database";
 import {
   getCoinMarketData,
+  getDiscourseTopics,
   getGithubReleases,
   getHacks,
   getProtocolFeesOrRevenue,
@@ -21,6 +22,7 @@ import {
   type CapitalScoreRecordResult,
 } from "./capital-score-repository";
 import {
+  collectDiscourseTopicCatalysts,
   collectFundingCatalysts,
   collectGithubReleaseCatalysts,
   collectSecurityIncidentRisks,
@@ -377,6 +379,31 @@ export async function runPipelineForProject(
         slug,
         projectId: project.id,
       });
+    }
+
+    // Sprint 23 (Discourse Governance Intelligence): mesmo padrão isolado das duas fontes
+    // acima — só chamado quando `discourseForumUrl` foi curado manualmente, nunca tratado como
+    // erro quando ausente, e uma falha aqui nunca impede TVL/Revenue/GitHub/Snapshot/o resto do
+    // pipeline.
+    if (project.discourseForumUrl) {
+      try {
+        const topicsResult = await getDiscourseTopics(project.discourseForumUrl);
+        await collectDiscourseTopicCatalysts(
+          project.id,
+          slug,
+          project.discourseForumUrl,
+          topicsResult.normalized,
+        );
+      } catch (err) {
+        logEventsEvent("events.discourse_failed", {
+          slug,
+          projectId: project.id,
+          discourseForumUrl: project.discourseForumUrl,
+          error: err instanceof Error ? err.message : "Erro desconhecido",
+        });
+      }
+    } else {
+      logEventsEvent("events.discourse_skipped_no_mapping", { slug, projectId: project.id });
     }
 
     const tvlPersist = await persistSnapshotSeries(

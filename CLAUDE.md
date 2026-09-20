@@ -13,169 +13,30 @@ Plataforma de inteligência fundamentalista para criptoativos. `Crypto_Research_
 detalhamento sprint a sprint (arquitetura, schema, decisões de escopo) — **está desatualizado em
 partes** (ex.: ainda lista Funding/Tokenomics/Investors como fora do MVP, o que já foi
 implementado); use `STATUS_PROJETO.md` como fonte mais atual do estado real do projeto.
-**Sprints 1–8 já estão implementados** — não é mais um projeto "aguardando aprovação". O Sprint 8
-adicionou Project Discovery + Top 10 Dinâmico: `packages/research-engine/src/discovery.ts`
-(`getProtocols()` do DefiLlama, filtro de TVL mínimo, `discovery-v1`),
-`packages/scoring-engine/src/priority.ts` (`priority-v1`, combina Score + Growth Momentum +
-Capital Momentum) e `packages/research-engine/src/selection.ts` (Top 10 por run, persistido
-imutavelmente em `ResearchRunSelection`) — o worker agora roda Discovery → Selection → pesquisa
-detalhada, em vez da antiga lista fixa de projetos (`FIXED_DEV_PROJECT_SLUGS` virou só uma
-constante de conveniência para chamada manual). O Sprint 11 adicionou integração real com
-CoinGecko (provider configurável em Settings junto com DefiLlama) que popula `fdvUsd`/MC-FDV
-quando o projeto tem `coinGeckoId` conhecido — usado hoje pelo grupo Supply Dilution do
-Tokenomics Score (Unlock Pressure/Distribution/Value Capture seguem sem fonte real, ver
-`STATUS_PROJETO.md`). O Sprint 12 adicionou a fundação de Historical Market Data: model
-`MarketDataSnapshot` (preço/market cap/volume diários, INSERT-only, dedupe por
-projeto+fonte+timestamp), populado via `GET /coins/{id}/market_chart` da CoinGecko
-(`packages/defi-data/src/coingecko-client.ts`, `getCoinMarketChart`) e persistido por
-`packages/research-engine/src/market-data-repository.ts` — chamado no pipeline logo depois do
-enriquecimento de FDV, mesmo gate condicional (`project.coinGeckoId` conhecido), mesmo isolamento
-de falha por projeto. Sem consumidor ainda (momentum/divergência/indicadores ficam para sprints
-futuras) — só a coleta e a persistência existem. O Sprint 13 adicionou Perfil do Projeto
-(`ProjectProfileSnapshot` — descrição/categorias/blockchains/homepage) e Onde o Token é Negociado
-(`TokenMarket` — exchanges/pares/volume reais), ambos extraídos do MESMO payload de
-`GET /coins/{id}` já buscado para FDV/supplies (Sprint 11) — só ligamos `tickers=true` na query
-existente, **nenhuma chamada HTTP nova** (`packages/research-engine/src/profile-repository.ts`).
-Perfil é INSERT-only com dedupe por CONTEÚDO (não por timestamp — o `last_updated` da CoinGecko
-muda a cada run mesmo sem alteração real); Mercados é UPSERT "estado atual" (mesma filosofia de
-`Token`, nunca ranking/recomendação de exchange). O Sprint 13 tentou (e não conseguiu, por falta
-de fonte gratuita real) implementar Unlock Pressure/Distribution/Value Capture do Tokenomics
-Score — confirmado empiricamente nesta sprint que `api.llama.fi/emissions/*` continua HTTP 402
-(pago) e a CoinGecko não expõe alocação/distribuição/unlock no endpoint gratuito; Tokenomist.ai
-segue bloqueado por falta de API Key. Nenhuma dessas 3 dimensões foi implementada com dado
-sintético — continuam `null`/`N/A` honestamente, ver `STATUS_PROJETO.md`. O Sprint 14 adicionou
-**Historical Fundamental Intelligence** — transforma os snapshots já existentes (TVL/Revenue/Fees
-desde o Sprint 3, Price/MarketCap/Volume desde o Sprint 12) em análises temporais: Growth
-(7/30/90/180/365d), Acceleration, Fundamental Momentum (composto TVL/Revenue/Fees/Volume Growth,
-`packages/scoring-engine/src/fundamental-intelligence.ts`), Market vs Fundamentals, Fundamental
-vs Price Divergence, Valuation Ratios (MC/TVL, MC/Revenue, FDV/Revenue, MC/Fees), Correlação
-(Pearson) e Leading/Lagging (cross-correlation) entre séries, e Fundamental Regime — tudo
-calculado **sob demanda** (`packages/research-engine/src/historical-intelligence.ts`,
-`computeFundamentalHistoricalIntelligence`), **sem nenhuma tabela nova**: decisão explícita de
-não persistir um "HistoricalFundamentalSnapshot" porque o cálculo é barato o suficiente sobre os
-~365 pontos por série já existentes (mesma filosofia de `history.ts`/`report.ts`, Sprint 9). Isto
-é **Fundamental Intelligence, não Trading Intelligence** — nenhuma função produz RSI/MACD/sinal
-de compra-venda/recomendação; só classificações descritivas (ex.: "Fundamental Acceleration",
-"Positive Fundamental Divergence"). Exposto no Project Report (nova seção "## Inteligência
-Fundamental Histórica") e na Home do Dashboard, que deixou de ser um menu estático
-(`apps/web/src/app/dashboard/page.tsx`, consome `GET /api/dashboard/fundamental`,
-`packages/research-engine/src/dashboard-intelligence.ts`) — Research/Data Health/Fundamental
-Movement/Divergences, escopados aos projetos JÁ pesquisados (distinct `FundamentalScore.projectId`),
-não ao universo inteiro descoberto. O Sprint 15 adicionou **Catalysts + Risks + Fundamental
-Context** (ver `CATALYSTS_RISKS_ARCHITECTURE.md` para a investigação completa de fontes) — model
-`ResearchEvent` (`packages/database/prisma/schema.prisma`), mas só 2 fontes reais e
-auto-identificáveis (sem curadoria manual) foram encontradas e implementadas: DefiLlama `/hacks`
-(incidentes de segurança reais, casados por `defillamaId` — nunca por nome) como Risk
-`SECURITY_INCIDENT`, e os `FundingRound` já persistidos desde o Sprint 6, reclassificados como
-Catalyst `FUNDING` (zero coleta nova). GitHub Releases e Snapshot.org (governança) são APIs reais
-e funcionais (confirmado por chamada ao vivo), mas exigem mapear projeto→repositório/space, que
-não existe em nenhum campo hoje — não implementadas para não depender de curadoria manual.
-`CoinGecko status_updates` testado em 5 projetos reais, sempre vazio (fonte parece
-abandonada/deprecated). `packages/research-engine/src/events-repository.ts` (persistência,
-idempotente por `(projectId, source, sourceId)`) e `fundamental-context.ts` (agrega Historical
-Intelligence + Catalysts + Risks + Tokenomics + Capital — **explicitamente não é Global Score**).
-O Sprint 16 adicionou **Event Impact Analysis** — associação temporal (nunca causalidade) entre
-os eventos reais do Sprint 15 (FUNDING/SECURITY_INCIDENT) e as séries históricas dos Sprints 3/12:
-janelas 7/14/30d antes/depois de cada `eventDate`, baseline = último valor dentro da janela
-(`packages/research-engine/src/metrics.ts`, `getLastValueInRange`), Fundamental Momentum/Regime
-before×after (reaproveita EXATAMENTE as funções do Sprint 14), detecção de eventos sobrepostos
-(`OVERLAPPING_EVENTS` sempre tem prioridade sobre qualquer outra classificação), e agregação
-cross-event (média/mediana/min/max por categoria, com aviso explícito de amostra insuficiente
-abaixo de 3 observações). Matemática pura em
-`packages/scoring-engine/src/event-impact.ts`; camada conectada ao banco em
-`packages/research-engine/src/event-impact-engine.ts`. **Calculado sob demanda, sem tabela
-nova** — mesma decisão do Sprint 14 (Historical Fundamental Intelligence), mesma justificativa
-(volume de eventos ainda pequeno, cálculo barato). Exposto no Project Report (nova seção "##
-Impacto Histórico de Eventos"), na Home do Dashboard ("Event Intelligence") e em
-`GET /api/projects/[slug]/event-impacts`. O Sprint 17 passou a exibir Perfil do Projeto e Onde o
-Token é Negociado (Sprint 13) diretamente na página do projeto
-(`apps/web/src/app/dashboard/projects/[slug]/page.tsx`, via `apps/web/src/lib/research.ts`), não
-mais só no Markdown baixável — reaproveita `getLatestProjectProfile`/`getTokenMarkets`, nenhuma
-chamada nova. Também adicionou tradução real PT-BR da descrição do projeto (CoinGecko vem em
-inglês) via MyMemory Translation API (`packages/defi-data/src/translate-client.ts`,
-`translateToPortuguese`), persistida em `ProjectProfileSnapshot.descriptionPt` (calculada uma vez
-por mudança de conteúdo do perfil); se a tradução falhar, cai para o texto em inglês com aviso
-explícito — nunca uma tradução parcial ou fabricada. O Sprint 18 (numerado assim para não colidir
-com o Sprint 17 acima — o doc de especificação recebido se autodenominava "Sprint 17") fez uma
-Source Intelligence Audit completa para Catalysts/Risks (`CATALYSTS_RISKS_SOURCE_AUDIT.md`,
-estende `CATALYSTS_RISKS_ARCHITECTURE.md` do Sprint 15) e implementou só a categoria com fonte
-zero-custo/zero-curadoria encontrada: Catalyst `LISTING`/`DELISTING`, derivado do diff de
-`TokenMarket` entre Research Runs consecutivas (`getCurrentTokenMarketKeys` em
-`profile-repository.ts`, lido ANTES do upsert da run; `persistTokenMarketListingCatalysts` em
-`events-repository.ts`) — nenhuma chamada HTTP nova, `eventDate` = momento em que a mudança foi
-percebida (não a data real do anúncio), `confidence` MEDIUM por essa imprecisão. Na primeira
-coleta de um projeto (sem `TokenMarket` anterior) nenhum evento é emitido, para não fabricar
-histórico. `PROTOCOL_UPGRADE`/`MAINNET`/`TESTNET` (GitHub Releases) e `GOVERNANCE` (Snapshot.org)
-têm APIs reais e gratuitas mas exigem curadoria manual de `Project.githubRepo`/
-`Project.snapshotSpace` (não implementado, decisão de produto pendente). `TOKEN_UNLOCK` só tem
-fonte paga (DefiLlama Pro, $300/mês) mas, a pedido explícito do usuário ("deixar pronto, mas não
-usar agora"), foi implementado como Risk **PRONTO, NÃO ATIVADO**: `getTokenUnlocks`/
-`pingDefiLlamaPro` em `packages/defi-data/src/client.ts`,
-`persistTokenUnlockRisks`/`collectTokenUnlockRisks` em `events-repository.ts`,
-`resolveDefiLlamaProApiKey` em `pipeline.ts`, terceiro provider real em Settings
-(`DEFILLAMA_PRO`, `apps/web/src/lib/connections.ts`) — sem uma key configurada lá, o código
-nunca executa, zero custo. A estrutura do payload foi montada a partir de documentação pública,
-nunca validada contra uma resposta real — validar antes de confiar no resultado quando ativado
-(ver `SPRINT_17_IMPLEMENTATION_REPORT.md`). Demais 12 categorias de Catalyst e 17 de Risk seguem
-sem fonte adequada — `NOT_IMPLEMENTED` documentado, nunca fabricado. O Sprint 19 implementou
-**External Identity Mapping** (`EXTERNAL_IDENTITY_ARCHITECTURE.md`) — `Project.githubRepo`/
-`Project.snapshotSpace`, colunas opcionais preenchidas SÓ por curadoria manual via
-`PATCH /api/projects/[slug]` (UI mínima na página do projeto), nunca inferidas por nome — e
-ligou as duas fontes que ficavam bloqueadas por falta desse mapeamento: **GitHub Releases**
-(`packages/defi-data/src/github-client.ts`, Catalyst sempre `OTHER` — categoria nunca inferida
-como MAINNET/PROTOCOL_UPGRADE sem evidência) e **Snapshot Governance**
-(`packages/defi-data/src/snapshot-client.ts`, Catalyst `GOVERNANCE`, status mapeado do `state`
-cru da fonte). Ambas confirmadas AO VIVO nesta sprint (diferente de `TOKEN_UNLOCK`, que segue
-pronto e inativo — não tocado). Validação anti-SSRF em dois pontos independentes
-(`packages/defi-data/src/external-identity.ts`) antes de qualquer URL ser montada. O Sprint 19
-também corrigiu 2 dívidas de teste pré-existentes (path errado de `.env` em `apps/web/tests/
-setup.ts`; cleanup incompleto em `discovery.integration.test.ts`) e rodou `npm run build` pela
-primeira vez — ver `SPRINT_19_IMPLEMENTATION_REPORT.md` para evidência completa (396 testes
-passando, 0 falhando). O Sprint 20 (`EVENT_CLASSIFICATION_ARCHITECTURE.md`) substituiu o
-`OTHER` hardcoded dos eventos GitHub por uma **Auditable Event Classification Engine**
-determinística (`packages/scoring-engine/src/event-classification.ts`, `classifyEvent` — 12
-categorias com regras conservadoras baseadas em verbo+ação, nunca `text.includes("palavra")`
-isolado; nunca LLM). Cada `ResearchEvent` ganhou `classificationMethod`
-(`STRUCTURED_SOURCE`/`RULE`/`MANUAL`/`FUTURE_LLM`) + `classificationRuleId` +
-`classificationEvidence` (nullable, expostos via `getCatalysts`/`getRisks` para auditoria).
-Fontes estruturadas (Snapshot/FundingRound/`/hacks`/Listing-Delisting/TokenUnlock) continuam
-`STRUCTURED_SOURCE`, nunca passam pela engine — confirmado que uma proposta Snapshot com
-"mainnet" no título permanece `GOVERNANCE`. Mecanismo de reclassificação de eventos GitHub já
-persistidos (`reclassifyExistingGithubEvents`, script `npm run reclassify-events`) — idempotente,
-nunca toca fontes estruturadas. Ver `SPRINT_20_IMPLEMENTATION_REPORT.md` para evidência completa
-(423 testes passando, 0 falhando). O Sprint 21 validou o fluxo completo contra dados 100% reais
-pela primeira vez — 4 projetos DeFi reais (Aave V3, Uniswap V4, Compound V3, Lido) com
-`githubRepo`/`snapshotSpace` verificados ao vivo (não inferidos), rodados pelo pipeline real
-(não fixture): **1.244 eventos reais** persistidos (85 GitHub Releases + 1.159 propostas
-Snapshot), idempotência confirmada em 3 execuções completas. Achado principal: as 12 regras da
-Classification Engine tiveram **0% de match em dados reais** (todos os 85 releases GitHub reais
-caíram em `OTHER`) — não é um bug, é uma descoberta honesta de que a GitHub Releases API
-devolve changelogs técnicos terse, não anúncios estilo press-release; nenhuma regra foi alterada
-sem evidência (0 falso positivo, 0 falso negativo confirmado). A validação também encontrou e
-corrigiu um bug real de infraestrutura: `getEventImpactsForProject`
-(`packages/research-engine/src/event-impact-engine.ts`) estourava o connection pool padrão do
-Prisma (5 conexões) com `Promise.all` sem limite sobre muitos eventos de um projeto — só
-reproduzível com volume real (Lido, 35 eventos); corrigido com processamento sequencial
-(`EVENT_IMPACT_BATCH_SIZE = 1`) + teste de regressão. Ver `SPRINT_21_IMPLEMENTATION_REPORT.md`
-para a auditoria completa (424 testes passando, 0 falhando). O Sprint 22 expandiu a amostra de 4
-para **7 projetos reais** em 6 setores (+ GMX V2 Perps/Derivatives, Stargate V2/Cross-Chain
-Bridge, Balancer V2/AMM — `curve-dex` falhou isolado por resposta inválida da própria DefiLlama)
-e mediu GitHub Releases fora de Lending: **433 eventos GitHub reais, 100% OTHER** (era 85 no
-Sprint 21) — confirma que a baixa densidade de sinal não é peculiaridade de um setor. Pela
-primeira vez a engine disparou de verdade em produção (28 matches reais em Stargate), e a
-auditoria do corpo real dos releases encontrou um **falso positivo confirmado**: a frase
-"`<ChainName> mainnet/testnet deployment`" aparece rotineiramente em changelogs automáticos de
-bridges cross-chain para descrever adição de suporte a uma nova chain, não lançamento do próprio
-protocolo. Corrigido com evidência real (`mainnet-launch-v1`/`testnet-launch-v1` →
-`mainnet-launch-v2`/`testnet-launch-v2`, removido o padrão bare "X deployment") e os 28 eventos
-já persistidos foram corrigidos em produção via `reclassifyExistingGithubEvents` — primeira vez
-que esse mecanismo (Sprint 20) foi usado contra dados reais. Nenhuma fonte nova foi implementada
-(Official Blog, Discourse, GitHub Commits/Tags investigados e rejeitados — sem host único/schema
-identificável ou sem ganho semântico real). Decisão registrada: GitHub Releases é `PARTIALLY`
-adequado como fonte (tecnicamente sólido, mas não captura anúncios de produto). Ver
-`SPRINT_22_IMPLEMENTATION_REPORT.md` (426 testes passando, 0 falhando).
+**Sprints 1–23 implementados.** O histórico de cada sprint está em `SPRINT_NN_IMPLEMENTATION_REPORT.md`
+e o estado atual em `STATUS_PROJETO.md` — não repetir aqui. Decisões duráveis, não óbvias no código:
 
-Monorepo `apps/web` mais `packages/{database,defi-data,research-engine,scoring-engine,queue,shared}`
+- **Sem dado sintético:** fonte real ou `null`/`N/A`. Sem fonte gratuita hoje: Unlock Pressure/
+  Distribution/Value Capture do Tokenomics Score. `TOKEN_UNLOCK` (DefiLlama Pro) está pronto e
+  **inativo** sem key em Settings; a estrutura do payload nunca foi validada contra resposta real.
+- **Calculado sob demanda, sem tabela nova:** Historical Fundamental Intelligence (Sprint 14) e
+  Event Impact (Sprint 16). É Fundamental Intelligence, nunca Trading (sem RSI/MACD/sinal de
+  compra-venda). `fundamental-context.ts` explicitamente não é Global Score. Event Impact é
+  associação temporal, nunca causalidade.
+- **Identidade externa** (`githubRepo`, `snapshotSpace`, `discourseForumUrl`): só curadoria
+  manual via `PATCH /api/projects/[slug]`, nunca inferida por nome; validação anti-SSRF em
+  `packages/defi-data/src/external-identity.ts`.
+- **Classificação de eventos:** a engine determinística (`scoring-engine/src/event-classification.ts`)
+  só é usada para GitHub Releases. Fontes estruturadas (Snapshot, Discourse, FundingRound, `/hacks`,
+  Listing/Delisting, TokenUnlock) nunca passam por ela. Discourse foi testado com a engine e
+  rejeitado (~50% de falsos positivos, Sprint 23). Regras só mudam com evidência real de dados
+  (ver relatórios dos Sprints 21/22).
+- **Persistência:** `ResearchEvent` idempotente por `(projectId, source, sourceId)`;
+  `ProjectProfileSnapshot` INSERT-only com dedupe por conteúdo; `TokenMarket` é UPSERT.
+- **Discovery/Top 10 (Sprint 8):** o worker roda Discovery → Selection → pesquisa detalhada;
+  `FIXED_DEV_PROJECT_SLUGS` é só conveniência para chamada manual.
+- **Pool do Prisma (5 conexões):** `getEventImpactsForProject` processa eventos sequencialmente
+  (`EVENT_IMPACT_BATCH_SIZE = 1`); `Promise.all` sem limite estoura o pool com volume real.
 
 Monorepo `apps/web` mais `packages/{database,defi-data,research-engine,scoring-engine,queue,shared}`
 mais `infrastructure/{docker-compose,workers}`, todos como npm workspaces. Stack: Next.js 14 (App
@@ -196,6 +57,8 @@ de cada sprint (seção 18) e o que ficou deliberadamente fora do MVP original (
 - `npm run worker:dev` — Research Worker (BullMQ). **Obrigatório** para Research Runs saírem de
   `QUEUED` — sem ele os jobs ficam parados na fila.
 - `npm run scheduler:dev` — scheduler opcional (lê `agent_settings` a cada 60s).
+- `npm run reclassify-events` — reclassifica eventos GitHub já persistidos (idempotente; nunca toca
+  fontes estruturadas).
 - `npm run lint` — `eslint .` na raiz (flat config, cobre todos os workspaces).
 - `npm run typecheck` — roda o `typecheck` de cada workspace + `tsc --noEmit -p
 infrastructure/workers/tsconfig.json` (os workers têm tsconfig próprio, checado à parte).
@@ -273,6 +136,17 @@ pg_tables WHERE schemaname='public'` — se as tabelas esperadas já existem, é
 <nome_da_migration>` para cada migration já reletida no schema real, na ordem, antes da
   primeira `migrate deploy` da sessão. Causa raiz não identificada (possível reinício do
   container Postgres sem persistir aquela tabela específica, ou volume parcialmente resetado).
+- **ATUALIZAÇÃO (2026-09-19): o mesmo sintoma já ocorreu com PERDA TOTAL DE DADOS** (29 tabelas
+  zeradas, `_prisma_migrations` intacta), sem nenhum comando do projeto ter causado. Causa
+  provável: instabilidade do Docker Desktop/WSL2. Antes de re-semear, `docker ps` (containers
+  "healthy") e `SELECT count(*) FROM projects`. Os campos curados (`githubRepo`/`snapshotSpace`/
+  `discourseForumUrl`) precisam ser refeitos a partir dos `SPRINT_NN_IMPLEMENTATION_REPORT.md`.
+  Se repetir: mover o Postgres para fora do Docker Desktop ou aumentar a RAM do WSL2 (`.wslconfig`).
+- **Rodar `runManualResearchPipeline` por script:** leva vários minutos com 7 projetos. Não use
+  `timeout` curto — cortar a run no meio deixa um card preso em Data Collection (WIP Limit 1/1) e
+  o projeto sem score, e isso faz `kanban-repository.integration.test.ts` falhar mesmo isolado.
+- **CI:** `.github/workflows/ci.yml` dispara em `push` para `main`, mas o único branch é `master` —
+  só `pull_request` dispara o CI hoje.
 - **`prisma migrate dev` pode falhar com "non-interactive environment"** quando rodado via Bash
   tool (sem TTY) — usar `prisma migrate diff --from-migrations <dir> --to-schema-datamodel
 <schema> --shadow-database-url "$DATABASE_URL" --script` para gerar o SQL da migration
@@ -321,7 +195,7 @@ pg_tables WHERE schemaname='public'` — se as tabelas esperadas já existem, é
 
 ## Escopo
 
-- **Implementado (Sprints 1–8)**: auth, API Keys criptografadas, DefiLlama real (TVL/Fees/
+- **Implementado (Sprints 1–23)**: auth, API Keys criptografadas, DefiLlama real (TVL/Fees/
   Revenue/Funding/Token summary), Research Run assíncrona via BullMQ, Scheduler, Fundamental/
   Tokenomics/Institutional Capital Score, Research Trace, Rankings, Kanban Pull System
   operacional (WIP, Pull atômico, Blocked, Urgent, métricas de fluxo, bottleneck detection),

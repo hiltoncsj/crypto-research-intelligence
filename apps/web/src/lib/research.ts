@@ -1,5 +1,9 @@
 import { prisma } from "@crypto-research/database";
-import { isValidGithubRepo, isValidSnapshotSpace } from "@crypto-research/defi-data";
+import {
+  isValidDiscourseForumUrl,
+  isValidGithubRepo,
+  isValidSnapshotSpace,
+} from "@crypto-research/defi-data";
 import {
   calculateWindowMetrics,
   getLatestProjectProfile,
@@ -29,6 +33,9 @@ export interface ProjectIdentification {
   // Snapshot Governance) nunca é chamada para este projeto.
   githubRepo: string | null;
   snapshotSpace: string | null;
+  // Sprint 23 (Discourse Governance Intelligence): mesma filosofia — curadoria manual, nunca
+  // inferida. `null` = Discourse nunca é chamado para este projeto.
+  discourseForumUrl: string | null;
 }
 
 export interface ProjectClassification {
@@ -157,6 +164,7 @@ export async function getProjectDashboardData(slug: string): Promise<ProjectDash
       discoverySource: project.discoverySource,
       githubRepo: project.githubRepo,
       snapshotSpace: project.snapshotSpace,
+      discourseForumUrl: project.discourseForumUrl,
     },
     classification: {
       segment: null,
@@ -204,9 +212,17 @@ export class ProjectNotFoundError extends Error {}
 
 export async function updateProjectExternalIdentity(
   slug: string,
-  input: { githubRepo?: string | null; snapshotSpace?: string | null },
+  input: {
+    githubRepo?: string | null;
+    snapshotSpace?: string | null;
+    discourseForumUrl?: string | null;
+  },
 ): Promise<void> {
-  const data: { githubRepo?: string | null; snapshotSpace?: string | null } = {};
+  const data: {
+    githubRepo?: string | null;
+    snapshotSpace?: string | null;
+    discourseForumUrl?: string | null;
+  } = {};
 
   if (input.githubRepo !== undefined) {
     if (input.githubRepo !== null && !isValidGithubRepo(input.githubRepo)) {
@@ -224,6 +240,15 @@ export async function updateProjectExternalIdentity(
       );
     }
     data.snapshotSpace = input.snapshotSpace;
+  }
+
+  if (input.discourseForumUrl !== undefined) {
+    if (input.discourseForumUrl !== null && !isValidDiscourseForumUrl(input.discourseForumUrl)) {
+      throw new InvalidExternalIdentityError(
+        "discourseForumUrl inválido — exige https://, sem IP privado/localhost, sem credenciais na URL.",
+      );
+    }
+    data.discourseForumUrl = input.discourseForumUrl;
   }
 
   try {

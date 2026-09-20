@@ -1,4 +1,5 @@
 import type {
+  NormalizedDiscourseTopic,
   NormalizedFundingRound,
   NormalizedGithubRelease,
   NormalizedMarketDataPoint,
@@ -19,6 +20,7 @@ import type {
   RawDefiLlamaFeesSummary,
   RawDefiLlamaHack,
   RawDefiLlamaProtocol,
+  RawDiscourseTopicDetail,
   RawGithubRelease,
   RawSnapshotProposal,
 } from "./types";
@@ -552,4 +554,38 @@ export function normalizeSnapshotProposals(
       };
     })
     .filter((item): item is NormalizedSnapshotProposal => item !== null);
+}
+
+/**
+ * Sprint 23 — Discourse: um tópico (via `/t/{id}.json`, confirmado ao vivo em 2026-09-19).
+ * `stripHtml` é injetado pelo chamador (`discourse-client.ts`) em vez de importado aqui — mantém
+ * este arquivo livre de lógica de parsing HTML, que é uma preocupação do client, não do
+ * adapter. `eventDate` = `created_at` do PRIMEIRO post (a proposta em si), com fallback para o
+ * `created_at` do tópico se o post_stream não vier na resposta.
+ */
+export function normalizeDiscourseTopic(
+  raw: unknown,
+  forumOrigin: string,
+  retrievedAt: string,
+  stripHtml: (html: string) => string,
+): NormalizedDiscourseTopic | null {
+  const t = raw as RawDiscourseTopicDetail | null;
+  if (!t || typeof t.id !== "number" || typeof t.title !== "string") return null;
+  if (typeof t.slug !== "string" || typeof t.created_at !== "string") return null;
+
+  const firstPost = t.post_stream?.posts?.[0];
+  const bodyHtml = nonEmptyString(firstPost?.cooked ?? null);
+  const eventDate = nonEmptyString(firstPost?.created_at ?? null) ?? t.created_at;
+
+  return {
+    source: "DISCOURSE",
+    retrievedAt,
+    forumOrigin,
+    topicId: t.id,
+    title: t.title,
+    bodyText: bodyHtml ? stripHtml(bodyHtml) : null,
+    url: `${forumOrigin}/t/${t.slug}/${t.id}`,
+    eventDate,
+    categoryId: typeof t.category_id === "number" ? t.category_id : null,
+  };
 }

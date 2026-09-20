@@ -138,7 +138,10 @@ export type EventsEvent =
   | "events.github_releases_skipped_no_mapping"
   | "events.snapshot_proposals_collected"
   | "events.snapshot_proposals_failed"
-  | "events.snapshot_proposals_skipped_no_mapping";
+  | "events.snapshot_proposals_skipped_no_mapping"
+  | "events.discourse_collected"
+  | "events.discourse_failed"
+  | "events.discourse_skipped_no_mapping";
 
 export function logEventsEvent(event: EventsEvent, data: Record<string, unknown> = {}): void {
   console.log(JSON.stringify({ event, timestamp: new Date().toISOString(), ...data }));

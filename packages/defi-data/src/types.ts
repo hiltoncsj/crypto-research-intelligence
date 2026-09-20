@@ -380,3 +380,42 @@ export interface NormalizedSnapshotProposal {
   endAt: string; // ISO — `end` (fim da votação)
   state: string; // repassado cru — o normalizador NUNCA inventa um estado
 }
+
+// Sprint 23 (Discourse Governance Intelligence): confirmado AO VIVO em 2026-09-19 contra
+// governance.aave.com e gov.uniswap.org (`GET /latest.json` e `GET /t/{id}.json`) — id, title,
+// created_at, category_id, slug em `/latest.json`; post_stream.posts[0].cooked (corpo em HTML)
+// e post_stream.posts[0].created_at em `/t/{id}.json`. Unidade escolhida: TÓPICO (não post
+// individual) — o tópico é a unidade semanticamente estável de uma discussão de governança; o
+// primeiro post é o que carrega o conteúdo da proposta em si.
+export interface RawDiscourseTopic {
+  id: number;
+  title: string;
+  created_at: string;
+  last_posted_at?: string | null;
+  category_id?: number | null;
+  slug: string;
+}
+
+export interface RawDiscourseTopicDetail {
+  id: number;
+  title: string;
+  created_at: string;
+  slug: string;
+  category_id?: number | null;
+  post_stream?: { posts?: Array<{ cooked?: string | null; created_at?: string | null }> } | null;
+}
+
+export interface NormalizedDiscourseTopic {
+  source: "DISCOURSE";
+  retrievedAt: string;
+  forumOrigin: string; // origin já validado (https://host), nunca a URL curada bruta
+  topicId: number; // sourceId determinístico — nunca aleatório
+  title: string;
+  // Corpo do primeiro post, JÁ COM TAGS HTML REMOVIDAS (Discourse retorna `cooked` como HTML) —
+  // usado só para classificar, nunca renderizado como HTML em lugar nenhum (ver
+  // DISCOURSE_SOURCE_ARCHITECTURE.md, seção Segurança/XSS).
+  bodyText: string | null;
+  url: string; // URL canônica pública do tópico (origin + /t/slug/id)
+  eventDate: string; // ISO — created_at do primeiro post (fallback: created_at do tópico)
+  categoryId: number | null;
+}
