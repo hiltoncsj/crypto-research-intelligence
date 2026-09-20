@@ -8,15 +8,15 @@ por leitura de código.
 
 Auditoria **parcial**: as áreas de maior risco foram cobertas (segurança de API, SSRF, look-ahead,
 idempotência, isolamento de falha, paginação), mas várias seções da checklist original **não foram
-auditadas** (ver seção 19). Foram encontrados 11 problemas: 1 P1 (corrigido), 6 P2 (3 corrigidos, 3 abertos) e 4 P3 (todos
-abertos). A correção A-04 (CI) ainda não foi confirmada por uma execução do CI.
+auditadas** (ver seção 19). Foram encontrados 13 problemas: 2 P1 (ambos corrigidos), 7 P2 (3 corrigidos, 4 abertos) e 4 P3
+(todos abertos). A correção A-04 (CI) ainda não foi confirmada por uma execução do CI.
 Nenhuma feature nova foi implementada.
 
 | Severidade | Encontrados | Corrigidos |
 | ---------- | ----------- | ---------- |
 | P0         | 0           | —          |
-| P1         | 1           | 1          |
-| P2         | 6           | 3          |
+| P1         | 2           | 2          |
+| P2         | 7           | 3          |
 | P3         | 4           | 0          |
 
 ## 2. Audit Scope
@@ -24,13 +24,14 @@ Nenhuma feature nova foi implementada.
 Cobertas: autenticação/autorização das rotas (teste real), secrets versionados, criptografia
 (parcial), SSRF/allowlist/redirects, Prisma (validate/migrate), idempotência de eventos e
 snapshots, isolamento de falha por fonte, paginação GitHub/Snapshot, matemática de
-`fundamental-intelligence.ts`, look-ahead no Event Impact, CI.
+`fundamental-intelligence.ts`, look-ahead e performance do Event Impact, `getEventIntelligenceOverview`, Score Engine
+(pesos, percentil, confidence, agregação), rankings, CI.
 
-**Não cobertas** (NOT VERIFIED): workers/BullMQ (só leitura de configuração), dashboard e
-`getEventIntelligenceOverview`, Research Trace, Fundamental Context, Score Engine (pesos,
-normalização), Classification Engine (regressão Stargate reauditada só via Sprint 22), N+1 e
-índices, rate limits, validação de input em rotas autenticadas, criptografia (`decrypt`), datas/
-timezone além de `alignDailySeries`, consistência entre camadas.
+**Não cobertas** (NOT VERIFIED): workers/BullMQ (só leitura de configuração), renderização do
+dashboard, Research Trace, Fundamental Context, reprodutibilidade de scores, Classification
+Engine (regressão Stargate reauditada só via Sprint 22), índices e demais N+1 fora do Event Impact,
+rate limits, validação de input em rotas autenticadas, criptografia (`decrypt`), datas/timezone
+além de `alignDailySeries`, consistência entre camadas.
 
 ## 3. Environment
 
@@ -40,19 +41,21 @@ CI: GitHub Actions.
 
 ## 4. Findings
 
-| ID   | Sev | Área                    | Problema                                                                                                                     | Causa raiz                                                                                 | Correção                                                                                              | Teste                                                                                 |
-| ---- | --- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| A-01 | P1  | Event Impact / métricas | Look-ahead bias: momentum e regime "antes/depois" do evento usavam o valor **mais recente da série inteira** como "atual"    | `calculateGrowthForWindow`/`calculateGrowthWindowPair` ignoravam `asOf` para o valor atual | Valor atual = último ponto ≤ `asOf` (`metrics.ts`, commit `d11cbb0`)                                  | `metrics.test.ts` (4 novos; **falham sem a correção**, verificado)                    |
-| A-02 | P2  | Segurança / SSRF        | `fetch` seguia redirects; allowlist só valia para a URL inicial                                                              | `redirect` padrão do `fetch`                                                               | Redirects manuais (máx. 3), cada salto revalidado (`http-client.ts`, `02edaa0`)                       | `http-client.redirect.test.ts` (4, servidor HTTP real)                                |
-| A-03 | P2  | Observabilidade         | Falha de fonte (GitHub/Snapshot/Discourse) virava `events.*_collected, created: 0`; erro real nunca logado                   | Pipeline chamava `collect*` com `normalized === null`                                      | Loga `events.*_failed` com `httpStatus`/`error` e não chama a persistência (`pipeline.ts`, `6422415`) | **Sem teste automatizado** — validado manualmente contra falha real (GitHub HTTP 404) |
-| A-04 | P2  | CI                      | CI nunca rodou em push (`main` inexistente) e falhava: faltava `prisma generate` e serviço Redis                             | Workflow incompleto                                                                        | `branches: [master]`, passo `prisma:generate`, serviço `redis:7-alpine` + `REDIS_URL`                 | Execução do CI (Redis: ver seção 17)                                                  |
-| A-05 | P2  | Dados / paginação       | Snapshot de `aave-v3` e `balancer-v2` com **exatamente 500** propostas = teto de paginação; histórico truncado sem indicador | `MAX_PAGES=5 × 100` sem sinalização de truncamento                                         | **Aberto**                                                                                            | —                                                                                     |
-| A-06 | P2  | Métricas                | Série parada há 100 dias devolve crescimento **0**, não `N/A` (confirmado empiricamente)                                     | Sem checagem de defasagem do último ponto                                                  | **Aberto** (exige decidir limite de staleness)                                                        | —                                                                                     |
-| A-07 | P2  | Métricas                | Correlação/Lead-Lag usam **níveis** (preço, TVL, market cap), não retornos: correlação espúria em séries com tendência       | Decisão de modelo v1                                                                       | **Aberto** (mudar = novo `modelVersion`)                                                              | —                                                                                     |
-| A-08 | P3  | Métricas                | `computeCorrelation` com `NaN`/`Infinity` cairia em `STRONG_POSITIVE`                                                        | Sem guarda de finitude                                                                     | **Aberto**                                                                                            | —                                                                                     |
-| A-09 | P3  | Métricas                | MC/Revenue e FDV/Revenue usam receita **diária** do último ponto (DefiLlama `dailyRevenue`), não anualizada                  | Definição do ratio                                                                         | **Aberto** (documentar/rotular)                                                                       | —                                                                                     |
-| A-10 | P3  | Fonte                   | `snapshotSpace` inexistente devolve HTTP 200 com lista vazia: mapping inválido indistinguível de "sem propostas"             | Comportamento da API Snapshot                                                              | **Aberto** (limitação da fonte)                                                                       | —                                                                                     |
-| A-11 | P3  | Cripto                  | `Buffer.from(raw, "hex")` não lança em hex inválido; o `catch` é código morto (o check de tamanho ainda protege)             | Semântica do Node                                                                          | **Aberto**                                                                                            | —                                                                                     |
+| ID   | Sev | Área                    | Problema                                                                                                                                                                            | Causa raiz                                                                                                             | Correção                                                                                                                    | Teste                                                                                                                                 |
+| ---- | --- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| A-01 | P1  | Event Impact / métricas | Look-ahead bias: momentum e regime "antes/depois" do evento usavam o valor **mais recente da série inteira** como "atual"                                                           | `calculateGrowthForWindow`/`calculateGrowthWindowPair` ignoravam `asOf` para o valor atual                             | Valor atual = último ponto ≤ `asOf` (`metrics.ts`, commit `d11cbb0`)                                                        | `metrics.test.ts` (4 novos; **falham sem a correção**, verificado)                                                                    |
+| A-02 | P2  | Segurança / SSRF        | `fetch` seguia redirects; allowlist só valia para a URL inicial                                                                                                                     | `redirect` padrão do `fetch`                                                                                           | Redirects manuais (máx. 3), cada salto revalidado (`http-client.ts`, `02edaa0`)                                             | `http-client.redirect.test.ts` (4, servidor HTTP real)                                                                                |
+| A-03 | P2  | Observabilidade         | Falha de fonte (GitHub/Snapshot/Discourse) virava `events.*_collected, created: 0`; erro real nunca logado                                                                          | Pipeline chamava `collect*` com `normalized === null`                                                                  | Loga `events.*_failed` com `httpStatus`/`error` e não chama a persistência (`pipeline.ts`, `6422415`)                       | **Sem teste automatizado** — validado manualmente contra falha real (GitHub HTTP 404)                                                 |
+| A-04 | P2  | CI                      | CI nunca rodou em push (`main` inexistente) e falhava: faltava `prisma generate` e serviço Redis                                                                                    | Workflow incompleto                                                                                                    | `branches: [master]`, passo `prisma:generate`, serviço `redis:7-alpine` + `REDIS_URL`                                       | Execução do CI (Redis: ver seção 17)                                                                                                  |
+| A-05 | P2  | Dados / paginação       | Snapshot de `aave-v3` e `balancer-v2` com **exatamente 500** propostas = teto de paginação; histórico truncado sem indicador                                                        | `MAX_PAGES=5 × 100` sem sinalização de truncamento                                                                     | **Aberto**                                                                                                                  | —                                                                                                                                     |
+| A-06 | P2  | Métricas                | Série parada há 100 dias devolve crescimento **0**, não `N/A` (confirmado empiricamente)                                                                                            | Sem checagem de defasagem do último ponto                                                                              | **Aberto** (exige decidir limite de staleness)                                                                              | —                                                                                                                                     |
+| A-07 | P2  | Métricas                | Correlação/Lead-Lag usam **níveis** (preço, TVL, market cap), não retornos: correlação espúria em séries com tendência                                                              | Decisão de modelo v1                                                                                                   | **Aberto** (mudar = novo `modelVersion`)                                                                                    | —                                                                                                                                     |
+| A-08 | P3  | Métricas                | `computeCorrelation` com `NaN`/`Infinity` cairia em `STRONG_POSITIVE`                                                                                                               | Sem guarda de finitude                                                                                                 | **Aberto**                                                                                                                  | —                                                                                                                                     |
+| A-09 | P3  | Métricas                | MC/Revenue e FDV/Revenue usam receita **diária** do último ponto (DefiLlama `dailyRevenue`), não anualizada                                                                         | Definição do ratio                                                                                                     | **Aberto** (documentar/rotular)                                                                                             | —                                                                                                                                     |
+| A-10 | P3  | Fonte                   | `snapshotSpace` inexistente devolve HTTP 200 com lista vazia: mapping inválido indistinguível de "sem propostas"                                                                    | Comportamento da API Snapshot                                                                                          | **Aberto** (limitação da fonte)                                                                                             | —                                                                                                                                     |
+| A-11 | P3  | Cripto                  | `Buffer.from(raw, "hex")` não lança em hex inválido; o `catch` é código morto (o check de tamanho ainda protege)                                                                    | Semântica do Node                                                                                                      | **Aberto**                                                                                                                  | —                                                                                                                                     |
+| A-12 | P1  | Performance / dashboard | `getEventIntelligenceOverview` (Home) levaria ~34 min com os dados reais: medido 784 ms/evento × 2.583 eventos; a medição de 280 s não terminou                                     | N+1: `computeEventImpact` recarregava 5 séries (~2.000 linhas cada) + todos os eventos do projeto **para cada evento** | Contexto do projeto carregado uma vez e reutilizado (`event-impact-engine.ts`, `571867e`); Lido 511 eventos: ~400 s → 8,9 s | Equivalência: **75/75 eventos reais idênticos** ao código anterior; suíte do research-engine 177/177. Sem teste automatizado de tempo |
+| A-13 | P2  | Score / rankings        | Rankings ordenam por `totalScore` e um score **parcial** (grupo ausente conta 0) compete direto com um completo; a página de ranking mostra a badge de confidence mas não "parcial" | Decisão v1: grupo `null` contribui 0 ao total                                                                          | **Aberto** (decisão de produto: normalizar pelo máximo disponível, excluir parciais ou marcar)                              | —                                                                                                                                     |
 
 Erro de processo desta auditoria: um commit intermediário (`6597421`) foi criado com o índice
 quase vazio e apagava 258 arquivos da árvore. Foi detectado **antes de qualquer push**, desfeito
@@ -100,7 +103,22 @@ Revisadas `classifyAcceleration`, `computeFundamentalMomentum`, `compareGrowth`,
 - Pearson e cross-correlation: implementação correta; ressalvas A-07 e A-08.
 - Lead/Lag escolhe o lag por |correlação|, então correlação negativa forte também vira "A liderou
   B": descritivo, sem causalidade explícita no código.
-- Fundamental Score, pesos, percentiles e confidence: **NOT VERIFIED**.
+- **Score Engine (Verified por leitura + medição):**
+  - Pesos somam corretamente: global 100 (30/20/15/15/10/10); Fundamental 10+10+5+5=30; janelas
+    0,2+0,5+0,3=1; Tokenomics 5+5+4+6=20; Capital 5+4+3+3=15. PASS.
+  - `percentileRank` é determinístico, ignora não-finitos e devolve `null` com menos de 3 pares. PASS.
+  - Dentro de um grupo, janela ausente é excluída e os pesos são renormalizados (não penaliza
+    dado faltante). PASS.
+  - **Ressalva (A-13):** entre grupos, o ausente conta 0 no total, então `totalScore` de um
+    projeto sem, por exemplo, Revenue fica limitado a 20/30. É sinalizado (`partial`,
+    `missingGroups`, tela do projeto), mas o ranking não o distingue.
+  - Tokenomics: Unlock Pressure, Distribution e Value Capture não têm fonte, então o máximo
+    alcançável hoje é 5/20 e todo Tokenomics Score é `partial` (limitação conhecida e
+    documentada, honesta: `N/A`, não dado sintético).
+  - Confidence usa recência (3 dias = 1,0, 30 dias = 0), o que mitiga em parte A-06 no score, mas
+    não no crescimento exibido.
+  - Determinismo/`scoreModelVersion`: versão presente nos pesos (`fundamental-v1` etc.); não
+    reexecutei um score para comparar reprodutibilidade (NOT VERIFIED).
 
 ## 8. Pipeline Validation
 
@@ -121,8 +139,19 @@ limiting: NOT VERIFIED.
 
 ## 11. Performance Validation
 
-Nenhuma medição de performance foi feita. `EVENT_IMPACT_BATCH_SIZE = 1` **não foi alterado**.
-`getEventIntelligenceOverview` (histórico de estouro de memória): NOT VERIFIED.
+Medido com dados reais (7 projetos, 2.583 eventos): ver A-12.
+
+- **Antes:** ~784 ms por evento; o overview completo não terminou em 280 s (estimativa ~34 min).
+- **Depois:** séries e eventos carregados uma vez por projeto; Lido (511 eventos) em 8,9 s, GMX
+  (118) em 1,9 s, Compound (88) em 1,0 s.
+- `EVENT_IMPACT_BATCH_SIZE` foi **removido** (não era um número a "otimizar": deixou de ter função,
+  porque o cálculo por evento não faz mais queries). A proteção contra exaustão do pool passa a ser
+  estrutural. O teste de regressão da Sprint 21 (projeto com muitos eventos) continua passando.
+- Pico de memória (RSS) e tamanho da resposta do overview **não foram medidos** (a primeira
+  medição foi interrompida por timeout). Tempo total do overview após a correção: NOT VERIFIED
+  end-to-end (estimativa ~45 s pelos números por projeto).
+- Ainda existe `Promise.all` entre projetos em `getEventIntelligenceOverview`; com uma query
+  por projeto (não por evento) isso não esgota o pool, mas não foi medido sob carga.
 
 ## 12. Event Classification Validation
 
@@ -137,7 +166,11 @@ passam, mas não os li um a um).
 
 ## 14. Dashboard Validation
 
-NOT VERIFIED.
+Parcial. Verificado: `getEventIntelligenceOverview` (backend da Home) — causa do problema
+histórico de memória/lentidão identificada e corrigida (A-12). Verificado por leitura: telas do
+projeto sinalizam score parcial e categorias sem dado; a página de rankings não (A-13).
+NOT VERIFIED: renderização, estados de loading/erro/vazio, hidratação, polling, paginação de
+listas grandes, gráficos.
 
 ## 15. Idempotency Validation
 
