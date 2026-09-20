@@ -168,33 +168,65 @@ function regimeAt(
  * evento futuro `ANNOUNCED` sem data confirmada) retorna `analysisStatus: "NO_EVENT_DATE"` com
  * tudo vazio, nunca uma exceção.
  */
+type ImpactEvent = NonNullable<Awaited<ReturnType<typeof getEventById>>>;
+
+// Auditoria (performance): as séries e a lista de eventos são do PROJETO, não do evento. Antes,
+// `computeEventImpact` recarregava tudo (5 queries, ~2.000 linhas por série) para CADA evento:
+// medido em dados reais, ~784 ms/evento — 2.583 eventos ≈ 34 min só no overview do dashboard.
+// Agora o contexto é carregado UMA vez por projeto e reutilizado; o cálculo em si não mudou.
+interface ProjectImpactContext {
+  tvlSeries: TimeSeriesEntry[];
+  revenueSeries: TimeSeriesEntry[];
+  feesSeries: TimeSeriesEntry[];
+  priceSeries: TimeSeriesEntry[];
+  marketCapSeries: TimeSeriesEntry[];
+  marketVolumeSeries: TimeSeriesEntry[];
+  allEvents: Awaited<ReturnType<typeof getAllEvents>>;
+}
+
+async function loadProjectImpactContext(projectId: string): Promise<ProjectImpactContext> {
+  const [tvlPoints, revenuePoints, feesPoints, marketDataPoints, allEvents] = await Promise.all([
+    loadSeries("TVL", projectId),
+    loadSeries("REVENUE", projectId),
+    loadSeries("FEES", projectId),
+    loadMarketDataSeries(projectId),
+    getAllEvents(projectId),
+  ]);
+
+  const toEntries = (points: Array<{ sourceTimestamp: Date; valueUsd: number }>) =>
+    points.map((p) => ({ sourceTimestamp: p.sourceTimestamp, valueUsd: p.valueUsd }));
+
+  return {
+    tvlSeries: toEntries(tvlPoints),
+    revenueSeries: toEntries(revenuePoints),
+    feesSeries: toEntries(feesPoints),
+    priceSeries: toPriceSeries(marketDataPoints),
+    marketCapSeries: toMarketCapSeries(marketDataPoints),
+    marketVolumeSeries: toVolumeSeries(marketDataPoints),
+    allEvents,
+  };
+}
+
 export async function computeEventImpact(eventId: string): Promise<EventImpactSummary | null> {
   const event = await getEventById(eventId);
   if (!event) return null;
+  const context = await loadProjectImpactContext(event.projectId);
+  return computeEventImpactWithContext(event, context);
+}
 
-  const [tvlPoints, revenuePoints, feesPoints, marketDataPoints, allEvents] = await Promise.all([
-    loadSeries("TVL", event.projectId),
-    loadSeries("REVENUE", event.projectId),
-    loadSeries("FEES", event.projectId),
-    loadMarketDataSeries(event.projectId),
-    getAllEvents(event.projectId),
-  ]);
-
-  const tvlSeries: TimeSeriesEntry[] = tvlPoints.map((p) => ({
-    sourceTimestamp: p.sourceTimestamp,
-    valueUsd: p.valueUsd,
-  }));
-  const revenueSeries: TimeSeriesEntry[] = revenuePoints.map((p) => ({
-    sourceTimestamp: p.sourceTimestamp,
-    valueUsd: p.valueUsd,
-  }));
-  const feesSeries: TimeSeriesEntry[] = feesPoints.map((p) => ({
-    sourceTimestamp: p.sourceTimestamp,
-    valueUsd: p.valueUsd,
-  }));
-  const priceSeries = toPriceSeries(marketDataPoints);
-  const marketCapSeries = toMarketCapSeries(marketDataPoints);
-  const marketVolumeSeries = toVolumeSeries(marketDataPoints);
+function computeEventImpactWithContext(
+  event: ImpactEvent,
+  context: ProjectImpactContext,
+): EventImpactSummary {
+  const {
+    tvlSeries,
+    revenueSeries,
+    feesSeries,
+    priceSeries,
+    marketCapSeries,
+    marketVolumeSeries,
+    allEvents,
+  } = context;
 
   const baseCoverage: EventImpactCoverage = {
     tvl: tvlSeries.length > 0,
@@ -325,30 +357,15 @@ export async function computeEventImpact(eventId: string): Promise<EventImpactSu
   };
 }
 
-// Sprint 21 (Production Event Activation & Coverage Validation): `Promise.all` sem limite aqui
-// estourava o connection pool padrão do Prisma (5 conexões, `P2024 Timed out fetching a new
-// connection from the connection pool`) para projetos com muitos eventos reais — descoberto
-// rodando contra dados reais (Lido, 35 eventos GitHub+Snapshot), nunca reproduzido pelos testes
-// existentes porque nenhuma fixture tinha mais de 2-3 eventos por projeto. `computeEventImpact`
-// já faz várias queries concorrentes por evento, então N eventos em paralelo é N× esse número
-// de conexões simultâneas. Processar em lotes pequenos evita o esgotamento sem precisar
-// aumentar `connection_limit` na DATABASE_URL de produção. `computeEventImpact` já abre 5
-// conexões concorrentes por evento (TVL/Revenue/Fees/MarketData/AllEvents) — mesmo um lote de 2
-// eventos em paralelo já disputaria 10 conexões contra um pool de 5. Processar sequencialmente
-// (1 por vez) é a única opção segura sem depender de configuração externa.
-const EVENT_IMPACT_BATCH_SIZE = 1;
-
+// Sprint 21 registrou que `Promise.all` sem limite sobre os eventos de um projeto estourava o pool
+// de conexões do Prisma (5), porque cada evento fazia várias queries. Desde a auditoria de
+// performance o contexto (séries + eventos) é carregado UMA vez por projeto e o cálculo por evento
+// não toca no banco — por construção não há mais pressão sobre o pool, mesmo com milhares de eventos
+// (teste de regressão: `event-impact-engine.integration.test.ts`, projeto com muitos eventos).
 export async function getEventImpactsForProject(projectId: string): Promise<EventImpactSummary[]> {
-  const events = await getAllEvents(projectId);
-  const impacts: (EventImpactSummary | null)[] = [];
-
-  for (let i = 0; i < events.length; i += EVENT_IMPACT_BATCH_SIZE) {
-    const batch = events.slice(i, i + EVENT_IMPACT_BATCH_SIZE);
-    const batchImpacts = await Promise.all(batch.map((e) => computeEventImpact(e.id)));
-    impacts.push(...batchImpacts);
-  }
-
-  return impacts.filter((i): i is EventImpactSummary => i !== null);
+  const context = await loadProjectImpactContext(projectId);
+  // Cálculo puro sobre o contexto já carregado: nenhuma query por evento.
+  return context.allEvents.map((e) => computeEventImpactWithContext(e, context));
 }
 
 // ------------------------------------------------------------------------------------------
