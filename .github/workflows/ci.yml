@@ -46,6 +46,10 @@ jobs:
 
       - run: npm install
 
+      # O Prisma Client não é gerado pelo `npm install`; sem isto, o typecheck falha com
+      # "no exported member 'SnapshotSource'" (enums e models vêm do client gerado).
+      - run: npm run prisma:generate
+
       - run: npm run lint
 
       - run: npm run typecheck
