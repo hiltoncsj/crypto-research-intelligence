@@ -145,8 +145,6 @@ pg_tables WHERE schemaname='public'` — se as tabelas esperadas já existem, é
 - **Rodar `runManualResearchPipeline` por script:** leva vários minutos com 7 projetos. Não use
   `timeout` curto — cortar a run no meio deixa um card preso em Data Collection (WIP Limit 1/1) e
   o projeto sem score, e isso faz `kanban-repository.integration.test.ts` falhar mesmo isolado.
-- **CI:** `.github/workflows/ci.yml` dispara em `push` para `main`, mas o único branch é `master` —
-  só `pull_request` dispara o CI hoje.
 - **`prisma migrate dev` pode falhar com "non-interactive environment"** quando rodado via Bash
   tool (sem TTY) — usar `prisma migrate diff --from-migrations <dir> --to-schema-datamodel
 <schema> --shadow-database-url "$DATABASE_URL" --script` para gerar o SQL da migration
