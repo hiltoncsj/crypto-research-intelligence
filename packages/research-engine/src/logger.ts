@@ -63,7 +63,11 @@ export function logSelectionEvent(event: SelectionEvent, data: Record<string, un
 export type HistoryEvent = "history.requested" | "history.completed" | "history.failed";
 export type DiffEvent = "diff.requested" | "diff.completed" | "diff.failed";
 export type ReportEvent =
-  "report.requested" | "report.completed" | "report.failed" | "report.downloaded";
+  | "report.requested"
+  | "report.completed"
+  | "report.failed"
+  | "report.downloaded"
+  | "report.pdf_generation_failed";
 
 export function logHistoryEvent(event: HistoryEvent, data: Record<string, unknown> = {}): void {
   console.log(JSON.stringify({ event, timestamp: new Date().toISOString(), ...data }));

@@ -31,6 +31,13 @@ Um único `.env` na raiz do monorepo (nunca duplicado em `apps/web/`):
 - `NEXTAUTH_SECRET`, `NEXTAUTH_URL` — NextAuth.
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH` — usuário único (bcrypt hash, nunca a senha em texto).
 - `MASTER_ENCRYPTION_KEY` — AES-256-GCM, 32 bytes hex, ver seção 7.
+- `PDF_BROWSER_EXECUTABLE_PATH` (opcional) — caminho de um Chrome/Edge instalado, usado por
+  `apps/web/src/lib/report-pdf.ts` para renderizar o Project Report como PDF (`puppeteer-core`,
+  sem baixar Chromium próprio). Sem essa variável, o sistema tenta os caminhos padrão do Windows
+  (Chrome/Edge) e do Linux (`/usr/bin/google-chrome`, `/usr/bin/chromium(-browser)`); se nenhum
+  existir, `GET /api/projects/[slug]/report` falha explicitamente com 500 (nunca faz fallback
+  silencioso para texto puro). Em um deploy Linux sem esses caminhos, definir esta variável é
+  obrigatório para o download de PDF funcionar.
 
 `apps/web/next.config.mjs` carrega o `.env` da raiz explicitamente (Next.js só olha o próprio
 diretório do app por padrão) — não remover esse trecho, senão `NO_SECRET`/erro de configuração.

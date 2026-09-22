@@ -1095,7 +1095,7 @@ export default function ProjectDetailPage() {
       const blob = await res.blob();
       const disposition = res.headers.get("Content-Disposition") ?? "";
       const match = /filename="([^"]+)"/.exec(disposition);
-      const filename = match?.[1] ?? `${params.slug}-research-report.md`;
+      const filename = match?.[1] ?? `${params.slug}-research-report.pdf`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
