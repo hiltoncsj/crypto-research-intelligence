@@ -130,3 +130,55 @@ describe("look-ahead: asOf histórico não usa dados posteriores", () => {
     expect(calculateGrowthForWindow(series, 30, new Date(asOf.getTime() - 400 * day))).toBe("N/A");
   });
 });
+
+// Regressão da auditoria HISTORICAL_FUNDAMENTAL_MATH_AUDIT.md — "current" precisa respeitar
+// `asOf`, nunca usar um ponto POSTERIOR a `asOf` como se fosse o valor "atual" (look-ahead bias).
+describe("calculateGrowthForWindow — look-ahead bias (auditoria)", () => {
+  const eventDate = new Date("2026-06-01T00:00:00.000Z");
+
+  it("nunca usa um ponto POSTERIOR a `asOf` como 'current'", () => {
+    const series = [
+      { sourceTimestamp: new Date(eventDate.getTime() - 30 * day), valueUsd: 100 },
+      { sourceTimestamp: eventDate, valueUsd: 120 }, // valor exatamente em asOf
+      { sourceTimestamp: new Date(eventDate.getTime() + 10 * day), valueUsd: 500 }, // FUTURO
+      { sourceTimestamp: new Date(eventDate.getTime() + 90 * day), valueUsd: 999 }, // FUTURO
+    ];
+    const result = calculateGrowthForWindow(series, 30, eventDate);
+    // (120 - 100) / 100 * 100 = 20% — nunca deve usar 500 ou 999 (pontos futuros)
+    expect(result).toBeCloseTo(20);
+  });
+
+  it("com asOf = agora (uso real de Historical Fundamental Intelligence), current = último ponto conhecido", () => {
+    const now = new Date();
+    const series = [
+      { sourceTimestamp: new Date(now.getTime() - 30 * day), valueUsd: 100 },
+      { sourceTimestamp: now, valueUsd: 150 },
+    ];
+    expect(calculateGrowthForWindow(series, 30, now)).toBeCloseTo(50);
+  });
+
+  it("asOf anterior a todos os pontos da série -> current N/A (nunca antecipa dado)", () => {
+    const series = [
+      { sourceTimestamp: new Date(eventDate.getTime() + 1 * day), valueUsd: 100 },
+      { sourceTimestamp: new Date(eventDate.getTime() + 5 * day), valueUsd: 200 },
+    ];
+    expect(calculateGrowthForWindow(series, 7, eventDate)).toBe("N/A");
+  });
+});
+
+describe("calculateGrowthWindowPair — look-ahead bias (auditoria)", () => {
+  const asOf = new Date("2026-06-01T00:00:00.000Z");
+
+  it("'current' respeita `asOf`, nunca usa pontos futuros da série completa", () => {
+    const series = [
+      { sourceTimestamp: new Date(asOf.getTime() - 60 * day), valueUsd: 100 },
+      { sourceTimestamp: new Date(asOf.getTime() - 30 * day), valueUsd: 120 },
+      { sourceTimestamp: asOf, valueUsd: 150 },
+      { sourceTimestamp: new Date(asOf.getTime() + 45 * day), valueUsd: 10_000 }, // FUTURO
+    ];
+    const result = calculateGrowthWindowPair(series, 30, asOf);
+    // current: (150-120)/120*100 = 25%; previousComparable: (120-100)/100*100 = 20%
+    expect(result.current).toBeCloseTo(25);
+    expect(result.previousComparable).toBeCloseTo(20);
+  });
+});

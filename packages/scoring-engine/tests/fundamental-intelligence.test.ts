@@ -253,4 +253,71 @@ describe("classifyFundamentalRegime", () => {
   it("nenhum dado disponível = INSUFFICIENT_DATA, nunca um regime fabricado", () => {
     expect(classifyFundamentalRegime("N/A", "INSUFFICIENT_DATA", "N/A")).toBe("INSUFFICIENT_DATA");
   });
+
+  it("growth exatamente 0 não é 'positivo' nem 'negativo' -> MIXED_FUNDAMENTALS (boundary)", () => {
+    // 0 falha `> 0` (allPositive) e falha `< 0` (allNegative): cai em MIXED_FUNDAMENTALS.
+    expect(classifyFundamentalRegime(0, "STABLE", 10)).toBe("MIXED_FUNDAMENTALS");
+  });
+
+  it("só um growth disponível (o outro N/A) ainda classifica, não vira INSUFFICIENT_DATA", () => {
+    expect(classifyFundamentalRegime(20, "ACCELERATING", "N/A")).toBe("FUNDAMENTAL_ACCELERATION");
+  });
+});
+
+describe("classifyAcceleration — boundary do limiar de 5pp", () => {
+  it("exatamente 5pp não é STABLE (limiar é < 5, não <= 5)", () => {
+    expect(classifyAcceleration(25, 20).regime).toBe("ACCELERATING");
+  });
+
+  it("4.99pp é STABLE", () => {
+    expect(classifyAcceleration(24.99, 20).regime).toBe("STABLE");
+  });
+});
+
+describe("compareGrowth — boundary do limiar de 5pp", () => {
+  it("exatamente 5pp de diferença não é CO_MOVED", () => {
+    expect(compareGrowth(25, 20).relation).toBe("A_EXPANDED_FASTER");
+  });
+});
+
+describe("classifyFundamentalPriceDivergence — boundary do limiar de 10 pontos", () => {
+  it("exatamente 10 pontos de diferença não é ALIGNED", () => {
+    // fundamentalMomentum já normalizado (0-100); price growth normalizado internamente.
+    // momentum=60, price growth tal que priceNormalized=50 -> delta=10.
+    const result = classifyFundamentalPriceDivergence(60, 0);
+    expect(result.deltaPoints).toBe(10);
+    expect(result.classification).toBe("POSITIVE_FUNDAMENTAL_DIVERGENCE");
+  });
+});
+
+describe("computeCorrelation — matemática independente (valores calculáveis à mão)", () => {
+  it("correlação perfeita positiva [1,2,3,4,5]x[2,4,6,8,10] -> +1", () => {
+    const result = computeCorrelation([1, 2, 3, 4, 5], [2, 4, 6, 8, 10]);
+    expect(result.coefficient).toBe(1);
+    expect(result.classification).toBe("STRONG_POSITIVE");
+  });
+
+  it("correlação perfeita negativa [1,2,3,4,5]x[10,8,6,4,2] -> -1", () => {
+    const result = computeCorrelation([1, 2, 3, 4, 5], [10, 8, 6, 4, 2]);
+    expect(result.coefficient).toBe(-1);
+    expect(result.classification).toBe("NEGATIVE");
+  });
+
+  it("coeficiente está sempre dentro de [-1, 1] (invariante) para entradas aleatórias", () => {
+    for (let trial = 0; trial < 20; trial += 1) {
+      const a = Array.from({ length: 15 }, () => Math.random() * 1000);
+      const b = Array.from({ length: 15 }, () => Math.random() * 1000);
+      const result = computeCorrelation(a, b);
+      if (typeof result.coefficient === "number") {
+        expect(result.coefficient).toBeGreaterThanOrEqual(-1);
+        expect(result.coefficient).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it("determinismo: mesma entrada duas vezes produz o mesmo resultado", () => {
+    const a = [3, 7, 2, 9, 5, 1, 8];
+    const b = [1, 4, 2, 8, 3, 0, 6];
+    expect(computeCorrelation(a, b)).toEqual(computeCorrelation(a, b));
+  });
 });
