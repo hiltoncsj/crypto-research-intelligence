@@ -3,6 +3,10 @@
 Ver `Crypto_Research_Intelligence_Master_Roadmap.md` (especificação) e
 `CRYPTO_RESEARCH_IMPLEMENTATION_PLAN.md` (plano técnico/sprints).
 
+**Estado atual: V1.0 (READY WITH CONDITIONS)** — ver `V1_RELEASE_NOTES.md` (o que está incluído,
+limitações aceitas, fora de escopo) e `docs/V1_OPERATIONS.md` (start/stop, backup, restore,
+recuperação de falha, rollback). Guia de uso em `TUTORIAL.md`.
+
 ## Setup local
 
 ```bash

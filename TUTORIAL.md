@@ -3,6 +3,10 @@
 > Guia para quem nunca usou a plataforma. Para o significado técnico de cada campo, ver
 > `DATA_DICTIONARY.md`; para a explicação conceitual de cada métrica, ver
 > `CRYPTO_RESEARCH_INTELLIGENCE_GUIDE.md`. Este arquivo foca em **como usar** o sistema.
+>
+> O projeto está em estado **V1.0 (READY WITH CONDITIONS)** — ver `V1_RELEASE_NOTES.md` para o
+> que está incluído/fora de escopo e `docs/V1_OPERATIONS.md` para start/stop, backup, restore e
+> recuperação de falhas (não repetido aqui, que continua focado em uso, não operação).
 
 ---
 
@@ -99,13 +103,19 @@ modelado no Tokenomics Score, mas sem fonte de dado real conectada — aparece c
 
 ## 11. O que são Catalysts
 
-Eventos que podem acelerar/mudar a trajetória de um projeto (upgrade, integração, mudança
-regulatória). Hoje é apenas um peso no modelo de score, sem detecção real implementada — não
-espere ver catalysts listados ainda.
+Eventos factuais que podem acelerar/mudar a trajetória de um projeto. Desde o Sprint 15, duas
+fontes reais alimentam Catalysts: rodadas de `Funding` já persistidas (reclassificadas, sem
+coleta nova) e eventos estruturados adicionais quando existirem. As demais categorias da
+taxonomia (`ResearchEventCategory`) existem no schema mas ainda não têm fonte real conectada —
+nunca aparecem com dado inventado, só ficam ausentes até haver fonte. Ver
+`GET /api/projects/[slug]/catalysts` e `CATALYSTS_RISKS_ARCHITECTURE.md`.
 
 ## 12. O que significa Risk
 
-Ainda não modelado como campo dedicado no sistema.
+Desde o Sprint 15, `SECURITY_INCIDENT` é populado a partir de `/hacks` da DefiLlama (casado por
+`defillamaId` exato, nunca por nome do projeto) — incidentes de segurança reais do protocolo.
+Outras categorias de Risk existem no schema, mas sem fonte real conectada ainda. Ver
+`GET /api/projects/[slug]/risks`.
 
 ## 13. Como interpretar crescimento
 
@@ -273,3 +283,10 @@ real, não uma promessa: "Confirmação: Fundamental Score +8.2, TVL +22.4%" sig
 está literalmente checando se aquele destaque anterior se sustentou, toda vez que uma nova
 Research Run roda. Se o projeto está se destacando pela primeira vez, o tooltip avisa que ainda
 não há confirmação — volte depois de uma nova Research Run pra ver o resultado real.
+
+## 20. Backup e recuperação
+
+Não é responsabilidade do usuário comum, mas se você administra a própria instância: existem
+scripts prontos (`scripts/backup-db.ps1`/`restore-db.ps1`) e o procedimento completo (o que a
+`MASTER_ENCRYPTION_KEY` faz e por que perdê-la é irreversível, como recuperar uma Research Run
+interrompida, rollback, emergência) está em `docs/V1_OPERATIONS.md` — não duplicado aqui.

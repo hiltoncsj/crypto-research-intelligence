@@ -1,5 +1,9 @@
 # AUDIT AND REPAIR REPORT
 
+> **Nota (2026-09-22)**: esta auditoria é anterior ao ciclo de fechamento da V1.0. Para o estado
+> mais atual, ver `PROJECT_COMPLETION_AUDIT.md`, `HISTORICAL_FUNDAMENTAL_MATH_AUDIT.md` e
+> `V1_RELEASE_READINESS_AUDIT.md`. Mantido aqui como histórico, não substituído.
+
 Auditoria técnica pós-Sprint 23. Legenda de status: **PASS**, **PASS WITH LIMITATION**, **FAIL**,
 **NOT VERIFIED**, **NOT IMPLEMENTED**. "Verified" = executado/observado; "Assumed" = inferido só
 por leitura de código.

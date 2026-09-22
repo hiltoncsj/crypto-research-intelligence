@@ -14,7 +14,9 @@ detalhamento sprint a sprint (arquitetura, schema, decisões de escopo) — **es
 partes** (ex.: ainda lista Funding/Tokenomics/Investors como fora do MVP, o que já foi
 implementado); use `STATUS_PROJETO.md` como fonte mais atual do estado real do projeto.
 **Sprints 1–23 implementados.** O histórico de cada sprint está em `SPRINT_NN_IMPLEMENTATION_REPORT.md`
-e o estado atual em `STATUS_PROJETO.md` — não repetir aqui. Decisões duráveis, não óbvias no código:
+e o estado atual em `STATUS_PROJETO.md` — não repetir aqui. Não existe `SPRINT_18_IMPLEMENTATION_REPORT.md`
+(lacuna na sequência 12–23; não investigado se o conteúdo do Sprint 18 foi mesclado em outro relatório).
+Decisões duráveis, não óbvias no código:
 
 - **Sem dado sintético:** fonte real ou `null`/`N/A`. Sem fonte gratuita hoje: Unlock Pressure/
   Distribution/Value Capture do Tokenomics Score. `TOKEN_UNLOCK` (DefiLlama Pro) está pronto e
@@ -63,6 +65,8 @@ de cada sprint (seção 18) e o que ficou deliberadamente fora do MVP original (
 - `npm run typecheck` — roda o `typecheck` de cada workspace + `tsc --noEmit -p
 infrastructure/workers/tsconfig.json` (os workers têm tsconfig próprio, checado à parte).
 - `npm test` — roda o `test` (`vitest run`) de cada workspace.
+- Skill `/verify` — roda lint + typecheck + test de todo o monorepo (incluindo o tsconfig
+  separado dos workers) de uma vez; usar antes de dar uma mudança por concluída.
 - `npm run build` — build de todos os workspaces (`next build` para `apps/web`).
 - `npm run prisma:generate` / `npm run prisma:migrate` — geram o client / criam+aplicam
   migration nova (dev). Para aplicar migrations já existentes sem criar novas (CI/produção):
@@ -153,7 +157,7 @@ pg_tables WHERE schemaname='public'` — se as tabelas esperadas já existem, é
 - **`npm run dev`/`worker:dev` em background**: no Windows, encerrar o processo "pai" nem
   sempre mata o processo filho real (`next-server`, `tsx`). Se a porta continuar em uso depois
   de parar o comando, encontre o PID (`netstat -ano | grep ":<porta>"`) e finalize direto
-  (`taskkill //F //PID <pid>`).
+  (`taskkill //F //PID <pid>`). A skill `.claude/skills/reset-dev` automatiza esse passo.
 - **Sem mock de fonte externa**: toda integração com DefiLlama (`api.llama.fi`), CoinGecko, e
   desde o Sprint 17 a MyMemory Translation API (`api.mymemory.translated.net`, tradução PT-BR de
   descrições — gratuita, sem API key, limite de ~500 caracteres por requisição, texto é dividido

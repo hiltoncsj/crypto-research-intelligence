@@ -6,6 +6,15 @@
 > última atualização em 2026-09-19, Sprint 23). As seções 2.1–2.9 e 3.x são o snapshot
 > original de 2026-09-16 e podem estar defasadas. Este arquivo não é atualizado
 > automaticamente conforme o código evolui.
+>
+> **Atualização 2026-09-22 — ciclo de fechamento da V1.0**: quatro auditorias adicionais foram
+> feitas e não estão repetidas aqui — `PROJECT_COMPLETION_AUDIT.md` (gap analysis geral, 35
+> seções), `HISTORICAL_FUNDAMENTAL_MATH_AUDIT.md` (as 15 métricas do Sprint 14 verificadas
+> fórmula a fórmula, look-ahead bias corrigido em `metrics.ts`), `V1_RELEASE_READINESS_AUDIT.md`
+> (segurança/deploy/operação, concluiu READY WITH CONDITIONS) e o hardening resultante
+> (`V1_RELEASE_NOTES.md`, `V1_FINAL_READINESS.md`, `docs/V1_OPERATIONS.md` — backup/restore
+> testado de verdade contra banco isolado, procedimentos de start/stop/recovery). Ver esses
+> arquivos para o estado mais atual; este documento continua sendo o mapa sprint a sprint.
 
 ---
 
@@ -674,7 +683,7 @@ e GitHub Releases (changelogs). Ver `DISCOURSE_SOURCE_ARCHITECTURE.md` e
 
 - `Project.discourseForumUrl` (curadoria manual via `PATCH /api/projects/[slug]`, validação
   anti-SSRF em `isValidDiscourseForumUrl`, host não fixo), `packages/defi-data/src/
-  discourse-client.ts` (`getDiscourseTopics`, keyless, 2 páginas / 40 tópicos por run),
+discourse-client.ts` (`getDiscourseTopics`, keyless, 2 páginas / 40 tópicos por run),
   `normalizeDiscourseTopic`, `persistDiscourseTopicCatalysts`, bloco isolado no pipeline.
 - **Achado principal:** a Classification Engine (Sprint 20) **não serve** para texto de fórum.
   Auditoria real de 240 tópicos (6 fóruns): 32 casaram alguma regra e cerca de metade eram falsos
