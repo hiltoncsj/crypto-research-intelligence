@@ -74,6 +74,35 @@ describe("kanban-repository (Prisma, integração real)", () => {
     expect(card.cardStatus).toBe(KanbanCardStatus.IN_PROGRESS);
   });
 
+  it("Discovery automático cria o card no BACKLOG como READY, e a seleção o puxa para o fluxo", async () => {
+    const projectId = await seedProject();
+    await recordProjectDiscovered(projectId, "Projeto Auto", researchRunId, "DISCOVERY_AUTO");
+
+    const board = await ensureDefaultBoard();
+    const backlog = board.columns.find((c) => c.key === KanbanColumnKey.BACKLOG);
+    const discovery = board.columns.find((c) => c.key === KanbanColumnKey.DISCOVERY);
+    const card = await prisma.kanbanCard.findFirstOrThrow({
+      where: { boardId: board.id, projectId },
+    });
+    cardIds.push(card.id);
+    // Esperando seleção não é trabalho: fora do WIP de Discovery, sem startedAt.
+    expect(card.columnId).toBe(backlog?.id);
+    expect(card.cardStatus).toBe(KanbanCardStatus.READY);
+    expect(card.startedAt).toBeNull();
+
+    // Rediscovery automático nunca move um card existente.
+    await recordProjectDiscovered(projectId, "Projeto Auto", researchRunId, "DISCOVERY_AUTO");
+    const unchanged = await prisma.kanbanCard.findUniqueOrThrow({ where: { id: card.id } });
+    expect(unchanged.columnId).toBe(backlog?.id);
+
+    // Selecionado para pesquisa: o pipeline chama sem DISCOVERY_AUTO e o card entra no fluxo.
+    await recordProjectDiscovered(projectId, "Projeto Auto", researchRunId);
+    const pulled = await prisma.kanbanCard.findUniqueOrThrow({ where: { id: card.id } });
+    expect(pulled.columnId).toBe(discovery?.id);
+    expect(pulled.cardStatus).toBe(KanbanCardStatus.IN_PROGRESS);
+    expect(pulled.startedAt).not.toBeNull();
+  }, 20000);
+
   it("advanceProjectCard registra uma KanbanCardMovement a cada troca de coluna (histórico imutável)", async () => {
     // Timeout maior que o default de 5s: cada `advanceProjectCard`/`ensureDefaultBoard` faz
     // vários round-trips reais ao Postgres (upsert do board + 6 colunas + card + movement), e

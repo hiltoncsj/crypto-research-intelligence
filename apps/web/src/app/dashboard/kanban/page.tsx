@@ -417,6 +417,9 @@ export default function KanbanPage() {
               : null;
             const columnIds = new Set(group.columns.map((c) => c.id));
             const cardsInGroup = board.cards.filter((c) => columnIds.has(c.columnId));
+            // Published é o fim do fluxo: seus cards são DONE, que não contam como WIP — ali o
+            // número útil é o total publicado, não o trabalho em andamento (que seria sempre 0).
+            const headerCount = group.key === "PUBLISHED" ? cardsInGroup.length : wip;
             const riskClass = riskLevel !== "NORMAL" ? ` risk-${riskLevel.toLowerCase()}` : "";
 
             return (
@@ -424,7 +427,7 @@ export default function KanbanPage() {
                 <div className="column-header">
                   <span className="column-title">{group.label}</span>
                   <span className={`wip-badge${bottleneck ? " full" : ""}`}>
-                    {wip}
+                    {headerCount}
                     {wipLimit !== null ? ` / ${wipLimit}` : ""}
                   </span>
                 </div>

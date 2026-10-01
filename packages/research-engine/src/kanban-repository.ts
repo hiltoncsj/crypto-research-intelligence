@@ -134,7 +134,14 @@ async function countActiveCardsInColumn(columnId: string, excludeCardId?: string
 /** Chamada pelo pipeline (pipeline.ts) quando um projeto é descoberto/upsertado pela primeira
  * vez numa Research Run (seção 14 do plano original / seção 6 do Pull System: "Research Run
  * cria/atualiza card em DISCOVERY quando um projeto novo é descoberto"). Se o card já existe
- * (o projeto já tinha sido pesquisado antes), apenas o traz de volta para DISCOVERY. */
+ * (o projeto já tinha sido pesquisado antes), apenas o traz de volta para DISCOVERY.
+ *
+ * Exceção — `DISCOVERY_AUTO` (Discovery automático do universo, discovery.ts): o card nasce no
+ * BACKLOG como READY, sem `startedAt`. Ninguém está trabalhando nesses projetos — eles só
+ * aguardam ser selecionados para o Top 10. Antes nasciam em DISCOVERY como IN_PROGRESS: ~700
+ * cards contra um WIP Limit de 1 deixavam a coluna marcada como gargalo permanente (escondendo o
+ * gargalo real) e contavam semanas de espera como trabalho. Quando o projeto é selecionado, o
+ * pipeline chama esta função de novo (sem `DISCOVERY_AUTO`) e o card sai do Backlog. */
 export async function recordProjectDiscovered(
   projectId: string,
   projectTitle: string,
@@ -149,7 +156,11 @@ export async function recordProjectDiscovered(
   const board = await ensureDefaultBoard();
   const existing = await prisma.kanbanCard.findFirst({ where: { boardId: board.id, projectId } });
 
+  const autoDiscovered = cardType === "DISCOVERY_AUTO";
+
   if (existing) {
+    // Discovery automático nunca mexe num card existente (pode estar no meio de uma pesquisa).
+    if (autoDiscovered) return;
     await advanceProjectCard(projectId, KanbanColumnKey.DISCOVERY, {
       researchRunId,
       reason: "PROJECT_REDISCOVERED",
@@ -157,29 +168,31 @@ export async function recordProjectDiscovered(
     return;
   }
 
-  const discoveryColumn = board.columns.find((c) => c.key === KanbanColumnKey.DISCOVERY);
-  if (!discoveryColumn) throw new Error("Coluna DISCOVERY não encontrada no board padrão.");
+  const columnKey = autoDiscovered ? KanbanColumnKey.BACKLOG : KanbanColumnKey.DISCOVERY;
+  const targetColumn = board.columns.find((c) => c.key === columnKey);
+  if (!targetColumn) throw new Error(`Coluna ${columnKey} não encontrada no board padrão.`);
+  const status = autoDiscovered ? KanbanCardStatus.READY : KanbanCardStatus.IN_PROGRESS;
 
   const card = await prisma.kanbanCard.create({
     data: {
       boardId: board.id,
-      columnId: discoveryColumn.id,
+      columnId: targetColumn.id,
       projectId,
       researchRunId: researchRunId ?? null,
       title: projectTitle,
       type: cardType,
-      cardStatus: KanbanCardStatus.IN_PROGRESS,
-      subcolumn: KanbanSubcolumn.IN_PROGRESS,
+      cardStatus: status,
+      subcolumn: autoDiscovered ? KanbanSubcolumn.READY : KanbanSubcolumn.IN_PROGRESS,
       assigneeType: KanbanActorType.SYSTEM,
-      startedAt: new Date(),
+      startedAt: autoDiscovered ? null : new Date(),
     },
   });
 
   await prisma.kanbanCardMovement.create({
     data: {
       cardId: card.id,
-      toColumnId: discoveryColumn.id,
-      toStatus: KanbanCardStatus.IN_PROGRESS,
+      toColumnId: targetColumn.id,
+      toStatus: status,
       actorType: KanbanActorType.SYSTEM,
       reason: "PROJECT_DISCOVERED",
     },
@@ -188,7 +201,7 @@ export async function recordProjectDiscovered(
   logKanbanEvent("kanban.card_created", {
     cardId: card.id,
     projectId,
-    column: discoveryColumn.key,
+    column: targetColumn.key,
   });
 }
 
@@ -243,6 +256,9 @@ export async function advanceProjectCard(
       subcolumn:
         status === KanbanCardStatus.READY ? KanbanSubcolumn.READY : KanbanSubcolumn.IN_PROGRESS,
       researchRunId: opts.researchRunId ?? card.researchRunId,
+      // Card que esperava no Backlog (Discovery automático) começa a ser trabalhado aqui — mesma
+      // regra de `pullCard`.
+      startedAt: card.startedAt ?? (status === KanbanCardStatus.IN_PROGRESS ? new Date() : null),
       enteredColumnAt: movedColumn ? new Date() : card.enteredColumnAt,
       completedAt: columnKey === KanbanColumnKey.PUBLISHED ? new Date() : card.completedAt,
     },

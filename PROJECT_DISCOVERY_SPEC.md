@@ -5,6 +5,14 @@
 > registro histórico da decisão de design; a seção 3 abaixo ("menor evolução proposta") é agora
 > o que de fato existe no código, não mais uma proposta. Ver `STATUS_PROJETO.md` seção 2.11 para
 > o resumo do que foi entregue.
+>
+> **Mudança (2026-10-01):** o card de um projeto descoberto automaticamente (`DISCOVERY_AUTO`)
+> nasce no **BACKLOG como READY**, não mais em DISCOVERY como IN_PROGRESS (diagrama da seção 2).
+> Ninguém trabalha nesses projetos até que sejam selecionados. Com cerca de 700 cards contra um
+> WIP Limit de 1, a coluna Discovery ficava marcada como gargalo permanente e contava a espera
+> como trabalho. Quando o projeto é selecionado, o pipeline move o card para DISCOVERY e depois
+> para Data Collection. Os 669 cards existentes foram migrados (motivo do movimento:
+> `DISCOVERY_AUTO_MOVED_TO_BACKLOG`).
 
 ---
 
