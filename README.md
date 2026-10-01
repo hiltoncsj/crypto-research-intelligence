@@ -273,17 +273,23 @@ Histórico de Eventos") e na Home do Dashboard ("Event Intelligence").
 
 ## Rodando os testes
 
-`npm test` roda os testes de todos os workspaces, incluindo:
+`npm test` roda os testes de todos os workspaces. Os testes **nunca usam os dados de dev**:
+`scripts/test-env.ts` (chamado pelo `tests/setup.ts` de cada workspace) redireciona
+`DATABASE_URL` para o banco `crypto_research_test` (derivado do seu `DATABASE_URL`, ou
+`TEST_DATABASE_URL` explícito) e `REDIS_URL` para o database 1 do Redis, e recusa rodar em banco
+sem sufixo `_test` ou no Redis db 0. O `pretest` (`scripts/prepare-test-db.ts`) cria o banco de
+testes se necessário e aplica as migrations — para rodar um arquivo isolado depois de uma
+migration nova, rode antes `npm run test:db:prepare`. Os testes incluem:
 
 - `packages/shared` — testes de criptografia (AES-256-GCM: encrypt/decrypt, tampering,
   chave ausente/inválida, payload malformado). Não dependem de banco.
 - `packages/defi-data` — testes do cliente HTTP (retry, timeout, 429/5xx/4xx, JSON
   inválido) e um teste de integração real contra `api.llama.fi` (pulado automaticamente se
   a máquina estiver offline).
-- `packages/database` — testes de integração contra o Postgres do `docker-compose`
-  (create/read/update/constraint de `api_connections`). Requer `docker compose up -d` e
-  `DATABASE_URL` configurada — sem isso, esses testes falham (não usam mock de banco, por
-  decisão de projeto).
+- `packages/database` — testes de integração contra o Postgres do `docker-compose` (banco
+  `crypto_research_test`; create/read/update/constraint de `api_connections`). Requer
+  `docker compose up -d` e `DATABASE_URL` configurada — sem isso, esses testes falham (não usam
+  mock de banco, por decisão de projeto).
 - `apps/web` — smoke tests de auth/health + testes da Connections API (autenticação
   obrigatória, mascaramento de secret, test connection, delete).
 - `packages/research-engine` — validator (valores negativos/futuros/suspeitos), metrics

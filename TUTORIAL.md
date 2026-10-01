@@ -169,14 +169,19 @@ movimentação com o motivo `RESEARCH_RUN_CANCELLED`). Esse movimento é **exclu
 média de Data Collection — uma tarefa abortada não é um ciclo real concluído, então não distorce
 a média para baixo. Cards que já tinham chegado em Published não são tocados.
 
-### Por que cards "somem" em Discovery sem nunca avançar
+### Onde ficam os projetos descobertos que ainda não foram pesquisados
 
 Toda Research Run automática roda **Discovery** (descobre TODOS os protocolos elegíveis na
 DefiLlama, um card por protocolo) e depois **Top 10 Selection** (escolhe só os 10 de maior
-Priority pra pesquisa detalhada — ver seção 19). **Só os 10 selecionados avançam** de coluna
-naquele ciclo; os demais ficam com o card parado em Discovery — não é um erro, é esperado. Na
-próxima Research Run, a Priority de todo mundo é recalculada com dados atualizados; se a de um
-projeto parado subir o suficiente, ele entra no próximo Top 10 e avança. Pra forçar a pesquisa de
+Priority pra pesquisa detalhada — ver seção 19). O card de um projeto descoberto nasce no
+**Backlog** como "pronto", não em Discovery: ninguém está trabalhando nele até que seja
+selecionado, então ele não conta como WIP nem marca a coluna Discovery como gargalo. O Backlog
+não aparece no board. **Só os selecionados entram no fluxo** (Discovery → Data Collection → …)
+naquele ciclo. Na próxima Research Run, a Priority de todo mundo é recalculada com dados
+atualizados; se a de um projeto subir o suficiente, ele entra no próximo Top 10.
+
+O número no cabeçalho de cada coluna é o WIP (cards em andamento). Em **Published**, o fim do
+fluxo, o número é o total de projetos publicados. Pra forçar a pesquisa de
 um projeto específico sem esperar o Top 10 escolher, dispare uma Research Run com `projectIds`
 explícitos.
 
@@ -188,13 +193,17 @@ partir do valor exibido no dashboard do projeto para ver a origem exata do dado.
 ## 19. Como interpretar a tabela do Top 10 Dinâmico (Priority)
 
 Toda Research Run automática passa primeiro por **Discovery** (descobre protocolos elegíveis via
-DefiLlama) e depois por **Top 10 Selection** (`priority-v1`,
+DefiLlama) e depois por **Top 10 Selection** (`priority-v2`,
 `packages/scoring-engine/src/priority.ts`) — só os 10 projetos com maior **Priority** são
-pesquisados em detalhe naquele ciclo. Essa tabela responde "quem merece atenção **agora**", não
+pesquisados em detalhe naquele ciclo. Em caso de **empate exato** com o 10º colocado, todos os
+empatados entram (o Top 10 vira Top 11, 12…) e dividem o mesmo rank — o nome do projeto nunca
+decide quem entra. Projetos sem nenhum sinal (sem Score, crescimento nem funding) não são
+selecionados. Essa tabela responde "quem merece atenção **agora**", não
 "qual é o melhor projeto" — um projeto excelente mas estagnado pode ficar de fora, enquanto um
 projeto menor em forte aceleração entra.
 
-Exemplo real de uma seleção:
+Exemplo real de uma seleção (feita com o `priority-v1`, quando o Growth Momentum ainda usava a
+janela de 30 dias — a leitura das colunas é a mesma):
 
 | #   | Projeto          | Priority | Score | Growth Momentum | Capital Momentum | Motivo                 |
 | --- | ---------------- | -------- | ----- | --------------- | ---------------- | ---------------------- |
@@ -219,8 +228,11 @@ Exemplo real de uma seleção:
 - **Score** — o Fundamental Score mais recente do projeto (0-100), de uma pesquisa anterior. Mede
   força fundamental (TVL/Revenue/Fees e crescimento), não é recomendação de compra/venda. `—`
   apareceria aqui se o projeto nunca foi pesquisado antes (não é o caso nesta tabela).
-- **Growth Momentum** — crescimento de TVL nos últimos 30 dias, normalizado 0-100 (±50% de
-  crescimento já satura a escala: +50% ou mais vira 100, -50% ou menos vira 0).
+- **Growth Momentum** — crescimento de TVL nos últimos **7 dias** (`change_7d` da DefiLlama,
+  disponível para todo o universo, inclusive projetos nunca pesquisados), normalizado 0-100: ±20%
+  já satura a escala (+20% ou mais vira 100, -20% ou menos vira 0). Até 2026-10-01
+  (`priority-v1`) era a janela de 30 dias da série própria de TVL, que só existia para projetos já
+  pesquisados — por isso o Top 10 se repetia run após run.
 - **Capital Momentum** — quão recente foi a última captação de funding conhecida, normalizado:
   captação nos últimos 30 dias = 100, um ano ou mais sem captar = 0.
   **Atenção à diferença entre `—` e `0` nesta coluna** — não são a mesma coisa:
@@ -255,6 +267,14 @@ Exemplo real de uma seleção:
   de pesquisa deste ciclo", não "o que comprar". Um projeto no topo pode ainda ter Tokenomics
   Score zerado, Confidence baixa, ou riscos não capturados por essas 3 dimensões (ver seções 3–4,
   10 e 12).
+
+### Lista "Projetos com dados" (página Research)
+
+Mostra **todo projeto já pesquisado**, não só o Top 10 da run mais recente. "Atualizado em" é a
+data do Fundamental Score mais recente do projeto, gravado só quando uma pesquisa termina. Quem é
+selecionado de novo tem os dados atualizados; quem fica de fora mantém os dados da última
+pesquisa (nada é apagado quando um projeto sai do Top 10). Passe o mouse na data para ver o rank
+e o Priority Score da última seleção.
 
 ### Destaque visual (linha verde) — o que significa e como ele "aprende" com o tempo
 

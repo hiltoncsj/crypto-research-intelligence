@@ -165,10 +165,10 @@ causou X" — só "variação observada após o evento".
 
 ## Research Priority (Sprint 8)
 
-| Campo                                | Descrição                                          | Cálculo                                                                                                                       | Estado |
-| ------------------------------------ | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------ |
-| `ResearchRunSelection.priorityScore` | Combina Score + Growth Momentum + Capital Momentum | `packages/scoring-engine/src/priority.ts` (`priority-v1`) — média só dos componentes disponíveis, nunca trata ausência como 0 | 🟢     |
-| `ResearchRunSelection.rank`          | Posição no Top 10 daquela Research Run             | Ordenação determinística (Score → Growth → Capital → slug)                                                                    | 🟢     |
+| Campo                                | Descrição                                          | Cálculo                                                                                                                                                                                                       | Estado |
+| ------------------------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `ResearchRunSelection.priorityScore` | Combina Score + Growth Momentum + Capital Momentum | `packages/scoring-engine/src/priority.ts` (`priority-v2`) — média só dos componentes disponíveis, nunca trata ausência como 0. Growth Momentum = `change_7d` do TVL (GET /protocols da DefiLlama), clamp ±20% | 🟢     |
+| `ResearchRunSelection.rank`          | Posição no Top 10 daquela Research Run             | Priority → Score → growth 7d bruto → captação mais recente. Empate exato no corte estende o Top N e os empatados dividem o rank; o slug nunca decide quem entra                                               | 🟢     |
 
 ## Métricas mencionadas em specs futuras, ainda AUSENTES no código (não confundir com N/A de um campo existente)
 

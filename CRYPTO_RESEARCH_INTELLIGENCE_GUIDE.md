@@ -37,7 +37,7 @@ Research Engine (orquestra o Research Run)
 ↓
 Scoring (Fundamental/Tokenomics/Institutional Capital — cada run gera uma linha nova)
 ↓
-Research Priority (priority-v1: Score + Growth Momentum + Capital Momentum)
+Research Priority (priority-v2: Score + Growth Momentum 7d + Capital Momentum)
 ↓
 Top 10 Selection (ResearchRunSelection, imutável por run)
 ↓
@@ -188,8 +188,9 @@ investimento.
   para um projeto específico (ver seção C acima).
 - **Research Priority**: um número diferente do Fundamental Score — combina o Score com Growth
   Momentum e Capital Momentum para decidir **quais projetos pesquisar primeiro** na próxima run
-  (Sprint 8, `priority-v1`). Um projeto pode ter Score alto e Priority baixa (ex.: sem captação
-  recente) ou vice-versa.
+  (Sprint 8; `priority-v2` desde 2026-10-01, com o Growth Momentum vindo do `change_7d` da
+  DefiLlama para todo o universo). Um projeto pode ter Score alto e Priority baixa (ex.: sem
+  captação recente, TVL parado) ou vice-versa.
 - **Confidence**: não é maturidade nem qualidade — é confiabilidade da evidência por trás de um
   Score específico (seção C acima). Um projeto "Established" (se essa classificação existisse)
   ainda poderia ter Confidence baixa se os dados recentes forem escassos.

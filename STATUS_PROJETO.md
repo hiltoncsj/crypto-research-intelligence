@@ -15,6 +15,10 @@
 > (`V1_RELEASE_NOTES.md`, `V1_FINAL_READINESS.md`, `docs/V1_OPERATIONS.md` — backup/restore
 > testado de verdade contra banco isolado, procedimentos de start/stop/recovery). Ver esses
 > arquivos para o estado mais atual; este documento continua sendo o mapa sprint a sprint.
+>
+> **Atualização 2026-10-01**: Priority Model `priority-v2`, empates no Top 10, cards do
+> Discovery automático no Backlog, lista "Projetos com dados" e banco de testes isolado — ver
+> seção 5.1. Inclui um incidente de perda de dados no banco de dev causado por cleanups de teste.
 
 ---
 
@@ -815,6 +819,48 @@ testes de UI, atualização do plano, inicialização do git).
   Discovery/Data Collection (de runs `FAILED`/`PARTIAL` antigas, não relacionadas ao código de
   cancelamento) revertidos pra Backlog, baseline de Data Collection resetada — banco dev limpo
   pra validar as features acima do zero.
+
+## 5.1 Sessão 2026-10-01 — mudanças desta sessão
+
+- **Top 10 se repetia em toda run (corrigido — `priority-v2`)**: com o `priority-v1`, Growth
+  Momentum vinha da série de `tvl_snapshots` e Score/funding de pesquisas anteriores — dados que
+  só existem para projetos já pesquisados. Os demais (692 de 702) ficavam com Priority 0, e o
+  desempate por slug (alfabético) completava o Top 10: as mesmas 10 cryptos em 6 runs seguidas.
+  Agora o Growth Momentum vem do `change_7d` de GET /protocols (DefiLlama), que o Discovery já
+  baixa na mesma run, para TODO o universo (clamp ±20%). A DefiLlama não expõe `change_1m`
+  (verificado). A primeira run com o v2 selecionou 10 projetos nunca pesquisados antes. Ver
+  `TOP10_SELECTION_SPEC.md`, `packages/scoring-engine/src/priority.ts`,
+  `packages/research-engine/src/selection.ts`.
+- **Empates no Top 10**: o slug não decide mais quem entra. Ordem: Priority → Score → growth 7d
+  bruto → captação mais recente (valores brutos, porque o clamp faria todo growth ≥ +20% empatar
+  em 100). Empate exato com o 10º estende a seleção (Top 11, 12…) e os empatados dividem o rank.
+  Projetos sem nenhum sinal nunca são selecionados (antes completavam a lista por ordem alfabética).
+- **Kanban — Discovery automático vai para o Backlog**: cards `DISCOVERY_AUTO` nasciam em
+  Discovery como IN_PROGRESS — ~700 cards contra WIP Limit 1 deixavam a coluna como gargalo
+  permanente (escondendo o gargalo real) e contavam a espera como trabalho. Agora nascem no
+  Backlog como READY, sem `startedAt`, e entram no fluxo quando selecionados. 669 cards
+  existentes migrados (motivo `DISCOVERY_AUTO_MOVED_TO_BACKLOG`). O cabeçalho de Published mostra
+  o total publicado (antes mostrava o WIP, sempre 0).
+- **Research — "Projetos com dados"**: lista todo projeto já pesquisado (tem Fundamental Score),
+  com "Atualizado em" = data do score mais recente. Antes vinha do histórico de
+  `ResearchRunSelection`, que sumiu no incidente abaixo e marcava como atualizado projeto cuja
+  pesquisa falhou.
+- **INCIDENTE — perda de dados no banco de dev causada por testes**: os testes rodavam contra o
+  mesmo banco de dev, e dois cleanups apagavam dados reais. `discovery.integration.test.ts`
+  apagava todo projeto com `discoverySource: "defillama"` (695 projetos, com scores, snapshots e
+  cards); `research-runs.test.ts` apagava toda Research Run com `requestedBy: "admin@example.com"`
+  — o `ADMIN_EMAIL` real — a cada `npm test`/`/verify` desde o Sprint 4 (todas as runs manuais,
+  com scores e seleções). Os 7 projetos curados (identidade externa) sobreviveram; os scores
+  posteriores a 2026-09-20 deles e o histórico de seleções se perderam (único backup anterior:
+  2026-09-22). O Discovery recriou o universo na run seguinte. Possível causa (não comprovada)
+  de perdas anteriores registradas no CLAUDE.md.
+- **Correção — banco e Redis de testes isolados**: `scripts/test-env.ts` (via `tests/setup.ts` de
+  cada workspace) aponta os testes para `crypto_research_test` e Redis database 1, e recusa
+  qualquer outro alvo. `pretest` (`scripts/prepare-test-db.ts`) cria o banco e aplica migrations.
+  CI usa `crypto_research_test`. Os dois cleanups foram corrigidos para apagar só o que o próprio
+  teste criou. `npm test` completo passou com as contagens do banco de dev idênticas antes e
+  depois. Também fechou um risco no Redis: `research.queue.test.ts` enfileirava jobs na fila que
+  o worker real consome.
 
 ## 6. Próximos Sprints sugeridos (para retomar depois)
 
