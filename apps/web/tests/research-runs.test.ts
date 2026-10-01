@@ -19,8 +19,13 @@ const { POST: CANCEL } = await import("../src/app/api/research-runs/[id]/cancel/
 const mockedGetServerSession = vi.mocked(getServerSession);
 const mockedEnqueue = vi.mocked(enqueueResearchRun);
 
+// E-mail exclusivo deste arquivo, nunca o ADMIN_EMAIL real: o afterAll apaga as runs por
+// `requestedBy`, e com "admin@example.com" (o mesmo do .env de dev) ele apagava todas as Research
+// Runs manuais reais, com scores e seleções — aconteceu em 2026-10-01.
+const TEST_REQUESTER = "research-runs-test@example.invalid";
+
 function authed() {
-  mockedGetServerSession.mockResolvedValue({ user: { email: "admin@example.com" } } as never);
+  mockedGetServerSession.mockResolvedValue({ user: { email: TEST_REQUESTER } } as never);
 }
 
 function unauthed() {
@@ -39,11 +44,11 @@ describe("Research Runs API", () => {
     // worker real durante validação manual (E2E). LIÇÃO DO SPRINT 5, reaplicada no Sprint 6:
     // toda vez que uma nova tabela ganha FK para research_run_id, este cleanup precisa ser
     // atualizado ANTES de rodar a suíte, não depois de um erro aparecer.
-    const where = { researchRun: { requestedBy: "admin@example.com" } };
+    const where = { researchRun: { requestedBy: TEST_REQUESTER } };
     await prisma.fundamentalScore.deleteMany({ where });
     await prisma.tokenomicsScore.deleteMany({ where });
     await prisma.institutionalCapitalScore.deleteMany({ where });
-    await prisma.researchRun.deleteMany({ where: { requestedBy: "admin@example.com" } });
+    await prisma.researchRun.deleteMany({ where: { requestedBy: TEST_REQUESTER } });
     await prisma.$disconnect();
   });
 
@@ -104,7 +109,7 @@ describe("Research Runs API", () => {
         trigger: "MANUAL",
         totalProjects: 4,
         processedProjects: 1,
-        requestedBy: "admin@example.com",
+        requestedBy: TEST_REQUESTER,
       },
     });
 
@@ -126,7 +131,7 @@ describe("Research Runs API", () => {
   it("POST /:id/cancel marca QUEUED como CANCELLED imediatamente", async () => {
     authed();
     const run = await prisma.researchRun.create({
-      data: { mode: "FULL", trigger: "MANUAL", totalProjects: 1, requestedBy: "admin@example.com" },
+      data: { mode: "FULL", trigger: "MANUAL", totalProjects: 1, requestedBy: TEST_REQUESTER },
     });
 
     const response = await CANCEL(new Request("http://localhost", { method: "POST" }), {
@@ -145,7 +150,7 @@ describe("Research Runs API", () => {
         trigger: "MANUAL",
         totalProjects: 1,
         status: "RUNNING",
-        requestedBy: "admin@example.com",
+        requestedBy: TEST_REQUESTER,
       },
     });
 

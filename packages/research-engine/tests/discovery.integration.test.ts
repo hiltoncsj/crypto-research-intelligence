@@ -66,6 +66,9 @@ describe.skipIf(!online)("discoverProjects (Prisma, integração real)", () => {
     expect(summary.scanned).toBeGreaterThan(0);
     expect(summary.filterVersion).toBe(DISCOVERY_FILTER_VERSION);
     expect(summary.eligible).toBeLessThanOrEqual(summary.scanned);
+    // priority-v2: o payload real de /protocols traz `change_7d` para a maioria dos protocolos.
+    expect(summary.tvlChange7dByDefillamaId.size).toBeGreaterThan(0);
+    expect(summary.tvlChange7dByDefillamaId.size).toBeLessThanOrEqual(summary.scanned);
 
     const after = await prisma.project.findMany({
       where: { discoverySource: "defillama" },
@@ -91,15 +94,23 @@ describe.skipIf(!online)("discoverProjects (Prisma, integração real)", () => {
   }, 150000);
 
   it("é idempotente: rodar duas vezes não duplica projetos", async () => {
-    const before = await prisma.project.count();
+    const idsBefore = new Set(
+      (await prisma.project.findMany({ select: { id: true } })).map((p) => p.id),
+    );
+    const before = idsBefore.size;
     const first = await discoverProjects();
+    // Só os projetos que ESTA chamada criou. Antes registrava todo projeto com
+    // discoverySource "defillama", e o afterAll apagava o universo descoberto inteiro (com
+    // scores, snapshots e cards) do banco real — aconteceu em 2026-10-01: 695 projetos perdidos.
     createdProjectIds.push(
       ...(
         await prisma.project.findMany({
           where: { discoverySource: "defillama" },
           select: { id: true },
         })
-      ).map((p) => p.id),
+      )
+        .map((p) => p.id)
+        .filter((id) => !idsBefore.has(id)),
     );
     const afterFirst = await prisma.project.count();
 
