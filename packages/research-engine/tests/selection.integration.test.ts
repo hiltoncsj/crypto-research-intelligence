@@ -20,6 +20,7 @@ describe("selectTopProjects (Prisma, integração real)", () => {
   let sectorId: string;
   const projectIds: string[] = [];
   const researchRunIds: string[] = [];
+  const defillamaIdOf = new Map<string, string>();
 
   async function seedProject(slugPrefix: string): Promise<string> {
     const slug = `${slugPrefix}-${randomUUID()}`;
@@ -27,6 +28,7 @@ describe("selectTopProjects (Prisma, integração real)", () => {
       data: { slug, name: slug, defillamaId: slug, sectorId },
     });
     projectIds.push(project.id);
+    defillamaIdOf.set(project.id, project.defillamaId);
     return project.id;
   }
 
@@ -50,28 +52,11 @@ describe("selectTopProjects (Prisma, integração real)", () => {
     });
   }
 
-  async function seedTvlGrowth(projectId: string) {
-    // Duas amostras (~35 e ~5 dias atrás) para produzir um growth30d de +40% real, calculado
-    // pela mesma `calculateWindowMetrics` usada pelo pipeline — nada inventado no teste.
-    const now = Date.now();
-    await prisma.tvlSnapshot.createMany({
-      data: [
-        {
-          projectId,
-          valueUsd: 1_000_000,
-          source: "DEFILLAMA",
-          sourceTimestamp: new Date(now - 35 * 24 * 60 * 60 * 1000),
-          retrievedAt: new Date(now - 35 * 24 * 60 * 60 * 1000),
-        },
-        {
-          projectId,
-          valueUsd: 1_400_000,
-          source: "DEFILLAMA",
-          sourceTimestamp: new Date(now - 1 * 24 * 60 * 60 * 1000),
-          retrievedAt: new Date(now - 1 * 24 * 60 * 60 * 1000),
-        },
-      ],
-    });
+  /** `change_7d` (pontos percentuais) no mesmo formato que o Discovery repassa para a seleção. */
+  function growthMap(entries: Array<[projectId: string, change7d: number]>): Map<string, number> {
+    return new Map(
+      entries.map(([projectId, change7d]) => [defillamaIdOf.get(projectId)!, change7d]),
+    );
   }
 
   async function seedFunding(projectId: string, daysAgo: number) {
@@ -97,7 +82,6 @@ describe("selectTopProjects (Prisma, integração real)", () => {
   afterAll(async () => {
     await prisma.researchRunSelection.deleteMany({ where: { projectId: { in: projectIds } } });
     await prisma.fundingRound.deleteMany({ where: { projectId: { in: projectIds } } });
-    await prisma.tvlSnapshot.deleteMany({ where: { projectId: { in: projectIds } } });
     await prisma.fundamentalScore.deleteMany({ where: { projectId: { in: projectIds } } });
     for (const id of projectIds) {
       await prisma.project.delete({ where: { id } });
@@ -108,12 +92,13 @@ describe("selectTopProjects (Prisma, integração real)", () => {
     await prisma.sector.delete({ where: { id: sectorId } });
   });
 
-  it("seleciona no máximo topN, mesmo quando o universo global é maior", async () => {
+  it("seleciona topN, passando disso só por empate no corte", async () => {
     await seedProject("cap-test");
     const runId = await seedResearchRun();
 
     const selection = await selectTopProjects(runId, 1);
-    expect(selection.length).toBeLessThanOrEqual(1);
+    // Mais de 1 só se todos empatarem no rank 1 (empatados nunca são descartados).
+    expect(selection.every((s) => s.rank === 1)).toBe(true);
   }, 20000);
 
   it("ordena por Priority Score, com desempate determinístico, e persiste a seleção com o modelo versionado", async () => {
@@ -126,17 +111,16 @@ describe("selectTopProjects (Prisma, integração real)", () => {
 
     // A: só Score alto (90), sem growth/funding — priority = 90 (média de 1 componente).
     await seedScore(projectA, scoringRunId, 90);
-    // B: Score moderado (83) + growth +40% (30d) + funding recente (5d) — priority > A (seção 27
+    // B: Score moderado (83) + growth +15% (7d) + funding recente (5d) — priority > A (seção 27
     // do Sprint 8: "B pode ser selecionado acima de A dependendo dos componentes de momentum").
     await seedScore(projectB, scoringRunId, 83);
-    await seedTvlGrowth(projectB);
     await seedFunding(projectB, 5);
-    // C: nenhum sinal disponível — priority 0, deve ficar por último (já seedado acima, sem
+    // C: nenhum sinal disponível — nunca entra na seleção (já seedado acima, sem
     // Score/growth/funding).
 
     // topN grande o suficiente para garantir que os 3 candidatos deste teste entrem, mesmo com
     // outros projetos no banco.
-    const selection = await selectTopProjects(selectionRunId, 5000);
+    const selection = await selectTopProjects(selectionRunId, 5000, growthMap([[projectB, 15]]));
 
     const rankOf = (projectId: string) => selection.find((s) => s.projectId === projectId)?.rank;
     const rankA = rankOf(projectA);
@@ -145,17 +129,46 @@ describe("selectTopProjects (Prisma, integração real)", () => {
 
     expect(rankA).toBeDefined();
     expect(rankB).toBeDefined();
-    expect(rankC).toBeDefined();
+    expect(rankC).toBeUndefined();
     expect(rankB!).toBeLessThan(rankA!); // B (balanceado) prioritário sobre A (só score)
-    expect(rankA!).toBeLessThan(rankC!); // A (com score) prioritário sobre C (sem sinal nenhum)
 
     const persisted = await prisma.researchRunSelection.findMany({
       where: { researchRunId: selectionRunId, projectId: { in: [projectA, projectB, projectC] } },
     });
-    expect(persisted.length).toBe(3);
+    expect(persisted.length).toBe(2); // C (sem sinal) não é persistido
     for (const row of persisted) {
       expect(row.selectionModelVersion).toBe(PRIORITY_MODEL_VERSION);
     }
+  }, 30000);
+
+  it("projeto nunca pesquisado com growth7d forte supera projeto pesquisado estagnado (priority-v2)", async () => {
+    // Regressão do ciclo vicioso do priority-v1: sem growth para o universo inteiro, projetos
+    // nunca pesquisados tinham prioridade 0 e as mesmas 10 cryptos se repetiam em toda run.
+    const scoringRunId = await seedResearchRun();
+    const withGrowthRunId = await seedResearchRun();
+    const withoutGrowthRunId = await seedResearchRun();
+
+    const stale = await seedProject("stale-researched");
+    const newcomer = await seedProject("newcomer");
+    await seedScore(stale, scoringRunId, 40);
+
+    const withGrowth = await selectTopProjects(
+      withGrowthRunId,
+      5000,
+      growthMap([
+        [stale, 0],
+        [newcomer, 15],
+      ]),
+    );
+    const rankWith = (id: string) => withGrowth.find((s) => s.projectId === id)?.rank;
+    expect(rankWith(newcomer)!).toBeLessThan(rankWith(stale)!);
+
+    // Sem o mapa (Discovery falhou): growth nunca é inventado — o recém-chegado volta a ficar
+    // sem sinal e não é selecionado; o projeto pesquisado continua.
+    const withoutGrowth = await selectTopProjects(withoutGrowthRunId, 5000);
+    const selectedWithout = new Set(withoutGrowth.map((s) => s.projectId));
+    expect(selectedWithout.has(stale)).toBe(true);
+    expect(selectedWithout.has(newcomer)).toBe(false);
   }, 30000);
 
   it("Research Run diferente pode ter composição diferente do Top N, sem apagar a seleção anterior", async () => {
@@ -209,6 +222,7 @@ describe("selectTopProjects (Prisma, integração real)", () => {
     // por ESTE teste é estável entre as duas chamadas.
     const projectId = await seedProject("idempotent-test");
     const runId = await seedResearchRun();
+    await seedScore(projectId, await seedResearchRun(), 55); // sem sinal, não seria selecionado
 
     await selectTopProjects(runId, 5000);
     const firstRows = await prisma.researchRunSelection.findMany({

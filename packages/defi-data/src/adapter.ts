@@ -57,6 +57,8 @@ export function normalizeProtocol(
     chains: Array.isArray(raw.chains) ? raw.chains : [],
     tvlUsd: extractCurrentTvl(raw.tvl),
     coinGeckoId: raw.gecko_id ?? null,
+    tvlChange7dPercent:
+      typeof raw.change_7d === "number" && Number.isFinite(raw.change_7d) ? raw.change_7d : null,
   };
 }
 

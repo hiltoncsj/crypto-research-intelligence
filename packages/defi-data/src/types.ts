@@ -16,6 +16,12 @@ export interface NormalizedProtocolSummary {
   // devolve — vínculo autoritativo, nunca inferido por nome/símbolo. `null` quando a DefiLlama
   // não conhece o gecko_id daquele protocolo.
   coinGeckoId: string | null;
+  // Variação % do TVL em 7 dias, calculada pela própria DefiLlama (campo `change_7d` de GET
+  // /protocols, em pontos percentuais: 12.3 = +12,3%). Alimenta o Growth Momentum do Priority
+  // Model (`priority-v2`). `null` quando a DefiLlama não devolve o campo (ex.: GET
+  // /protocol/{name}). A DefiLlama não expõe `change_1m` (confirmado por chamada real em
+  // 2026-10-01) — só `change_1h`/`change_1d`/`change_7d`.
+  tvlChange7dPercent: number | null;
 }
 
 // Formato bruto (parcial) retornado por GET /protocols e GET /protocol/{name} — apenas os
@@ -49,6 +55,7 @@ export interface RawDefiLlamaProtocol {
   // autoritativo da própria fonte (nunca inferido por nós), usado para enriquecer FDV/supplies
   // via CoinGecko sem heurística de matching por nome/símbolo.
   gecko_id?: string | null;
+  change_7d?: number | null;
 }
 
 /** Sprint 6: um round de captação, exatamente como a DefiLlama devolve embutido em

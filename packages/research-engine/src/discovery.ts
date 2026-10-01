@@ -46,6 +46,11 @@ export interface DiscoverySummary {
   skippedSlugCollision: number;
   filterVersion: string;
   error?: string;
+  /** `change_7d` do TVL (pontos percentuais) de TODOS os protocolos do payload que trazem o
+   * campo — não só os elegíveis, porque projetos cadastrados manualmente podem estar abaixo do
+   * TVL mínimo. Repassado para `selectTopProjects` (Growth Momentum do `priority-v2`) sem nova
+   * chamada HTTP. Vazio quando o `/protocols` falha. Não vai para log (são milhares de entradas). */
+  tvlChange7dByDefillamaId: Map<string, number>;
 }
 
 /**
@@ -72,7 +77,14 @@ export async function discoverProjects(researchRunId?: string): Promise<Discover
       skippedSlugCollision: 0,
       filterVersion: DISCOVERY_FILTER_VERSION,
       error: raw.error ?? "Sem payload de /protocols",
+      tvlChange7dByDefillamaId: new Map(),
     };
+  }
+
+  const tvlChange7dByDefillamaId = new Map<string, number>();
+  for (const p of normalized) {
+    if (p.tvlChange7dPercent !== null)
+      tvlChange7dByDefillamaId.set(p.defillamaId, p.tvlChange7dPercent);
   }
 
   const eligible = normalized.filter(
@@ -175,5 +187,6 @@ export async function discoverProjects(researchRunId?: string): Promise<Discover
     created,
     skippedSlugCollision,
     filterVersion: DISCOVERY_FILTER_VERSION,
+    tvlChange7dByDefillamaId,
   };
 }

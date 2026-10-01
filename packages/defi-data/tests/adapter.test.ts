@@ -34,6 +34,7 @@ describe("normalizeProtocol", () => {
       chains: ["Ethereum"],
       tvlUsd: 123.45,
       coinGeckoId: null,
+      tvlChange7dPercent: null,
     });
   });
 
@@ -56,6 +57,19 @@ describe("normalizeProtocol", () => {
       "2026-09-15T00:00:00.000Z",
     );
     expect(result?.tvlUsd).toBe(150);
+  });
+
+  it("maps change_7d to tvlChange7dPercent, and anything non-finite to null", () => {
+    const at = "2026-09-15T00:00:00.000Z";
+    expect(normalizeProtocol({ id: "1", name: "A", change_7d: 12.3 }, at)?.tvlChange7dPercent).toBe(
+      12.3,
+    );
+    expect(normalizeProtocol({ id: "1", name: "A", change_7d: null }, at)?.tvlChange7dPercent).toBe(
+      null,
+    );
+    expect(
+      normalizeProtocol({ id: "1", name: "A", change_7d: Number.NaN }, at)?.tvlChange7dPercent,
+    ).toBe(null);
   });
 });
 

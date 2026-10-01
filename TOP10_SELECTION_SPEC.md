@@ -6,6 +6,23 @@
 > agora o que de fato existe no código. Ver `STATUS_PROJETO.md` seção 2.11 para o resumo do que
 > foi entregue e o que ficou fora deste ciclo (múltiplos tipos de ranking, Narrative/Catalyst
 > Strength).
+>
+> **priority-v2 (2026-10-01):** o Growth Momentum passou a vir do `change_7d` de GET /protocols
+> (DefiLlama), que o Discovery já baixa na mesma run, em vez do growth30d da série de
+> `tvl_snapshots`. Motivo: com o v1, só projetos já pesquisados tinham série de TVL, Score ou
+> funding. Os demais (692 de 702) ficavam com prioridade 0, e o desempate final por slug
+> (alfabético) completava o Top 10. Resultado: as mesmas 10 cryptos em todas as runs. A janela de
+> 7d vale para todos os candidatos (nunca 30d para uns e 7d para outros no mesmo ranking). O clamp
+> passou de ±50% (30d) para ±20% (7d). A DefiLlama não expõe `change_1m` (verificado por chamada
+> real). Sem o Discovery na run, o growth fica `null` (nunca inventado) e a prioridade usa só
+> Score + Capital.
+>
+> **Empates (2026-10-01):** o slug nunca decide quem entra. A ordem é priorityScore → Score →
+> growth7d bruto → captação mais recente (valores brutos, porque o clamp faria todo growth ≥ +20%
+> empatar em 100). Se o candidato seguinte ao 10º empata com ele em todos esses critérios, ele
+> também entra: o Top 10 vira Top 11, 12… e os empatados dividem o mesmo `rank`. Projetos sem
+> nenhum sinal (sem Score, growth nem funding) nunca são selecionados, nem para completar o Top N.
+> Antes eles completavam a lista em ordem alfabética.
 
 ---
 
