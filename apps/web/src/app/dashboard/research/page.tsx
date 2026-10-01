@@ -25,6 +25,18 @@ interface ResearchRun {
 interface ProjectListItem {
   slug: string;
   name: string;
+  lastUpdatedAt: string;
+  lastSelection: { rank: number; priorityScore: number } | null;
+}
+
+function formatSelectedAt(iso: string): string {
+  return new Date(iso).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 // Sprint 8 (seção 40): visão mínima do Top 10 dinâmico desta Research Run — carregada sob
@@ -233,133 +245,164 @@ export default function ResearchPage() {
       {runs.length === 0 ? (
         <p>Nenhuma Execução de Pesquisa ainda.</p>
       ) : (
-        <table className="card-lg" style={{ padding: 0, display: "table", overflow: "hidden" }}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>ID</th>
-              <th style={cellStyle}>Situação</th>
-              <th style={cellStyle}>Modo</th>
-              <th style={cellStyle}>Gatilho</th>
-              <th style={cellStyle}>Duração</th>
-              <th style={cellStyle}>Projetos</th>
-              <th style={cellStyle}>Sucesso</th>
-              <th style={cellStyle}>Falha</th>
-              <th style={cellStyle}>Suspeitos</th>
-              <th style={cellStyle}>Erro</th>
-              <th style={cellStyle}>Ação</th>
-              <th style={cellStyle}>Top 10</th>
-            </tr>
-          </thead>
-          <tbody>
-            {runs.map((run) => (
-              <Fragment key={run.id}>
-                <tr>
-                  <td style={cellStyle} title={run.id}>
-                    {run.id.slice(0, 8)}
-                  </td>
-                  <td style={cellStyle}>
-                    <span className={`badge ${STATUS_BADGE[run.status]}`}>
-                      {STATUS_LABEL[run.status]}
-                    </span>
-                  </td>
-                  <td style={cellStyle}>{MODE_LABEL[run.mode]}</td>
-                  <td style={cellStyle}>{TRIGGER_LABEL[run.trigger]}</td>
-                  <td style={cellStyle}>{formatDuration(run.startedAt, run.finishedAt)}</td>
-                  <td style={cellStyle}>
-                    {run.processedProjects}/{run.totalProjects}
-                  </td>
-                  <td style={cellStyle}>{run.successfulProjects}</td>
-                  <td style={cellStyle}>{run.failedProjects}</td>
-                  <td style={cellStyle}>{run.suspiciousProjects}</td>
-                  <td style={cellStyle}>{run.errorMessage ?? "—"}</td>
-                  <td style={cellStyle}>
-                    {ACTIVE_STATUSES.has(run.status) ? (
-                      <button onClick={() => handleCancel(run.id)}>Cancelar</button>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td style={cellStyle}>
-                    <button onClick={() => toggleTop10(run.id)}>
-                      {expandedRunId === run.id ? "Ocultar" : "Ver"}
-                    </button>
-                  </td>
-                </tr>
-                {expandedRunId === run.id && (
+        <div
+          className="card-lg"
+          style={{ padding: 0, maxHeight: 420, overflowY: "auto", overflowX: "auto" }}
+        >
+          <table style={{ display: "table", width: "100%" }}>
+            <thead>
+              <tr>
+                <th style={stickyHeaderStyle}>ID</th>
+                <th style={stickyHeaderStyle}>Situação</th>
+                <th style={stickyHeaderStyle}>Modo</th>
+                <th style={stickyHeaderStyle}>Gatilho</th>
+                <th style={stickyHeaderStyle}>Duração</th>
+                <th style={stickyHeaderStyle}>Projetos</th>
+                <th style={stickyHeaderStyle}>Sucesso</th>
+                <th style={stickyHeaderStyle}>Falha</th>
+                <th style={stickyHeaderStyle}>Suspeitos</th>
+                <th style={stickyHeaderStyle}>Erro</th>
+                <th style={stickyHeaderStyle}>Ação</th>
+                <th style={stickyHeaderStyle}>Top 10</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((run) => (
+                <Fragment key={run.id}>
                   <tr>
-                    <td style={cellStyle} colSpan={11}>
-                      {selections === null ? (
-                        <p>Carregando…</p>
-                      ) : selections.length === 0 ? (
-                        <p>
-                          Sem seleção dinâmica registrada para esta run (run com{" "}
-                          <code>projectIds</code> explícitos, ou anterior ao Sprint 8).
-                        </p>
+                    <td style={cellStyle} title={run.id}>
+                      {run.id.slice(0, 8)}
+                    </td>
+                    <td style={cellStyle}>
+                      <span className={`badge ${STATUS_BADGE[run.status]}`}>
+                        {STATUS_LABEL[run.status]}
+                      </span>
+                    </td>
+                    <td style={cellStyle}>{MODE_LABEL[run.mode]}</td>
+                    <td style={cellStyle}>{TRIGGER_LABEL[run.trigger]}</td>
+                    <td style={cellStyle}>{formatDuration(run.startedAt, run.finishedAt)}</td>
+                    <td style={cellStyle}>
+                      {run.processedProjects}/{run.totalProjects}
+                    </td>
+                    <td style={cellStyle}>{run.successfulProjects}</td>
+                    <td style={cellStyle}>{run.failedProjects}</td>
+                    <td style={cellStyle}>{run.suspiciousProjects}</td>
+                    <td style={cellStyle}>{run.errorMessage ?? "—"}</td>
+                    <td style={cellStyle}>
+                      {ACTIVE_STATUSES.has(run.status) ? (
+                        <button onClick={() => handleCancel(run.id)}>Cancelar</button>
                       ) : (
-                        <table style={{ width: "100%" }}>
-                          <thead>
-                            <tr>
-                              <th style={cellStyle}>#</th>
-                              <th style={cellStyle}>Projeto</th>
-                              <th style={cellStyle}>Prioridade</th>
-                              <th style={cellStyle}>Score</th>
-                              <th style={cellStyle}>Momentum de Crescimento</th>
-                              <th style={cellStyle}>Momentum de Capital</th>
-                              <th style={cellStyle}>Motivo</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {selections.map((s) => {
-                              return (
-                                <tr
-                                  key={s.project.slug}
-                                  style={
-                                    s.relevant
-                                      ? {
-                                          background: "var(--success-soft)",
-                                          borderLeft: "3px solid var(--success-border)",
-                                        }
-                                      : undefined
-                                  }
-                                >
-                                  <td style={cellStyle}>{s.rank}</td>
-                                  <td style={cellStyle}>
-                                    <Link href={`/dashboard/projects/${s.project.slug}`}>
-                                      {s.project.name}
-                                    </Link>
-                                    {s.relevant && (
-                                      <InfoTooltip content={relevanceTooltipContent(s)} />
-                                    )}
-                                  </td>
-                                  <td style={cellStyle}>{s.priorityScore}</td>
-                                  <td style={cellStyle}>{s.globalScore ?? "—"}</td>
-                                  <td style={cellStyle}>{s.growthMomentum ?? "—"}</td>
-                                  <td style={cellStyle}>{s.capitalMomentum ?? "—"}</td>
-                                  <td style={cellStyle}>{s.selectionReason.join(", ")}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                        "—"
                       )}
                     </td>
+                    <td style={cellStyle}>
+                      <button onClick={() => toggleTop10(run.id)}>
+                        {expandedRunId === run.id ? "Ocultar" : "Ver"}
+                      </button>
+                    </td>
                   </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+                  {expandedRunId === run.id && (
+                    <tr>
+                      <td style={cellStyle} colSpan={11}>
+                        {selections === null ? (
+                          <p>Carregando…</p>
+                        ) : selections.length === 0 ? (
+                          <p>
+                            Sem seleção dinâmica registrada para esta run (run com{" "}
+                            <code>projectIds</code> explícitos, ou anterior ao Sprint 8).
+                          </p>
+                        ) : (
+                          <table style={{ width: "100%" }}>
+                            <thead>
+                              <tr>
+                                <th style={cellStyle}>#</th>
+                                <th style={cellStyle}>Projeto</th>
+                                <th style={cellStyle}>Prioridade</th>
+                                <th style={cellStyle}>Score</th>
+                                <th style={cellStyle}>Momentum de Crescimento</th>
+                                <th style={cellStyle}>Momentum de Capital</th>
+                                <th style={cellStyle}>Motivo</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {selections.map((s) => {
+                                return (
+                                  <tr
+                                    key={s.project.slug}
+                                    style={
+                                      s.relevant
+                                        ? {
+                                            background: "var(--success-soft)",
+                                            borderLeft: "3px solid var(--success-border)",
+                                          }
+                                        : undefined
+                                    }
+                                  >
+                                    <td style={cellStyle}>{s.rank}</td>
+                                    <td style={cellStyle}>
+                                      <Link href={`/dashboard/projects/${s.project.slug}`}>
+                                        {s.project.name}
+                                      </Link>
+                                      {s.relevant && (
+                                        <InfoTooltip content={relevanceTooltipContent(s)} />
+                                      )}
+                                    </td>
+                                    <td style={cellStyle}>{s.priorityScore}</td>
+                                    <td style={cellStyle}>{s.globalScore ?? "—"}</td>
+                                    <td style={cellStyle}>{s.growthMomentum ?? "—"}</td>
+                                    <td style={cellStyle}>{s.capitalMomentum ?? "—"}</td>
+                                    <td style={cellStyle}>{s.selectionReason.join(", ")}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <div style={{ marginTop: 24 }}>
         <h2>Projetos com dados</h2>
+        <p>
+          Todo projeto já pesquisado (não só o Top 10 da Research Run mais recente). Quem é
+          selecionado de novo tem os dados atualizados; os demais mantêm os dados da última
+          pesquisa. Ordenado pela data da última atualização.
+        </p>
         {projects.length === 0 ? (
           <p>Nenhum projeto processado ainda.</p>
         ) : (
-          <ul>
+          <ul
+            style={{
+              listStyle: "none",
+              padding: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
             {projects.map((p) => (
-              <li key={p.slug}>
+              <li
+                key={p.slug}
+                style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}
+              >
                 <Link href={`/dashboard/projects/${p.slug}`}>{p.name}</Link>
+                <span
+                  className="badge"
+                  title={
+                    p.lastSelection
+                      ? `Última seleção: #${p.lastSelection.rank} · Priority Score ${p.lastSelection.priorityScore.toFixed(2)}`
+                      : "Sem seleção registrada"
+                  }
+                >
+                  Atualizado em {formatSelectedAt(p.lastUpdatedAt)}
+                </span>
               </li>
             ))}
           </ul>
@@ -370,3 +413,11 @@ export default function ResearchPage() {
 }
 
 const cellStyle: CSSProperties = { border: "1px solid #ccc", padding: 6, textAlign: "left" };
+
+const stickyHeaderStyle: CSSProperties = {
+  ...cellStyle,
+  position: "sticky",
+  top: 0,
+  background: "var(--surface, #fff)",
+  zIndex: 1,
+};

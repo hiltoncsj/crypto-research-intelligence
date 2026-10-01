@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { listProjectsWithData } from "@/lib/research";
 
-// Sprint 3: lista os projetos que já têm ao menos um snapshot persistido — usado pela UI
-// para saber quais links de detalhe (/dashboard/projects/[slug]) mostrar.
+// Lista os projetos já pesquisados (têm Fundamental Score), com a data da última atualização —
+// usado pela UI para os links de detalhe (/dashboard/projects/[slug]). Ver listProjectsWithData.
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session) {

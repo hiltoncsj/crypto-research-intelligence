@@ -193,13 +193,67 @@ export async function getProjectDashboardData(slug: string): Promise<ProjectDash
   };
 }
 
-export async function listProjectsWithData(): Promise<Array<{ slug: string; name: string }>> {
-  const projects = await prisma.project.findMany({
-    where: { tvlSnapshots: { some: {} } },
-    select: { slug: true, name: true },
-    orderBy: { name: "asc" },
+export interface ProjectWithDataItem {
+  slug: string;
+  name: string;
+  /** Data do Fundamental Score mais recente — quando os dados do projeto foram atualizados pela
+   * última vez (o score só é gravado ao fim de uma pesquisa concluída). */
+  lastUpdatedAt: string;
+  /** Seleção mais recente em alguma Research Run, se houver (projeto pesquisado por run manual
+   * com slugs explícitos, ou cujo histórico de seleção se perdeu, não tem). */
+  lastSelection: { rank: number; priorityScore: number } | null;
+}
+
+// "Projetos com dados" = todo projeto já pesquisado ao menos uma vez (tem Fundamental Score),
+// não só o Top 10 da run mais recente. Projeto selecionado de novo tem os dados atualizados pelo
+// pipeline; os demais mantêm os dados da última pesquisa (nada é apagado quando um projeto sai
+// do Top 10). Antes a lista vinha do histórico de `ResearchRunSelection` — sumia quando esse
+// histórico se perdia (2026-10-01) e marcava como "atualizado" projeto selecionado cuja
+// pesquisa falhou. Ordenado pela última atualização desc.
+export async function listProjectsWithData(): Promise<ProjectWithDataItem[]> {
+  const latestScores = await prisma.fundamentalScore.groupBy({
+    by: ["projectId"],
+    _max: { createdAt: true },
   });
-  return projects;
+  const projectIds = latestScores.map((s) => s.projectId);
+  if (projectIds.length === 0) return [];
+
+  const [projects, selections] = await Promise.all([
+    prisma.project.findMany({
+      where: { id: { in: projectIds } },
+      select: { id: true, slug: true, name: true },
+    }),
+    prisma.researchRunSelection.findMany({
+      where: { projectId: { in: projectIds } },
+      select: { projectId: true, rank: true, priorityScore: true },
+      orderBy: { researchRun: { createdAt: "desc" } },
+      distinct: ["projectId"],
+    }),
+  ]);
+
+  const projectById = new Map(projects.map((p) => [p.id, p]));
+  const selectionByProject = new Map(selections.map((s) => [s.projectId, s]));
+
+  const items: ProjectWithDataItem[] = [];
+  for (const score of latestScores) {
+    const project = projectById.get(score.projectId);
+    const lastUpdatedAt = score._max.createdAt;
+    if (!project || !lastUpdatedAt) continue;
+    const selection = selectionByProject.get(score.projectId);
+    items.push({
+      slug: project.slug,
+      name: project.name,
+      lastUpdatedAt: lastUpdatedAt.toISOString(),
+      lastSelection: selection
+        ? { rank: selection.rank, priorityScore: Number(selection.priorityScore) }
+        : null,
+    });
+  }
+
+  return items.sort((a, b) => {
+    const dateDiff = new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime();
+    return dateDiff !== 0 ? dateDiff : a.name.localeCompare(b.name);
+  });
 }
 
 // Sprint 19 (External Identity Mapping): único caminho de escrita para githubRepo/
