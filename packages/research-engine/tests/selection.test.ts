@@ -8,7 +8,12 @@ import { pickTopWithTies, type ScoredCandidate } from "../src/selection";
 
 function candidate(
   slug: string,
-  inputs: { score?: number | null; growth7d?: number | null; daysSinceLastRaise?: number | null },
+  inputs: {
+    score?: number | null;
+    growth7d?: number | null;
+    daysSinceLastRaise?: number | null;
+    marketCapRank?: number | null;
+  },
 ): ScoredCandidate {
   const base = {
     projectId: slug,
@@ -16,6 +21,7 @@ function candidate(
     score: inputs.score ?? null,
     growth7d: inputs.growth7d ?? null,
     daysSinceLastRaise: inputs.daysSinceLastRaise ?? null,
+    marketCapRank: inputs.marketCapRank ?? null,
   };
   return { ...base, ...calculateResearchPriority(base) };
 }

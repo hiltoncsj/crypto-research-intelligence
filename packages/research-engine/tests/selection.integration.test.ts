@@ -2,8 +2,16 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@crypto-research/database";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { selectTopProjects } from "../src/selection";
+import { selectTopProjects, type RankBucket } from "../src/selection";
 import { PRIORITY_MODEL_VERSION } from "@crypto-research/scoring-engine";
+
+// Faixa única cobrindo todo rank, com `count` grande o suficiente para garantir que os
+// candidatos seedados por este arquivo entrem — substitui o antigo `topN` plano (o critério de
+// seleção por faixa de `marketCapRank`, pedido do usuário em 2026-11-02, é testado separadamente
+// no describe abaixo "seleção por faixa de marketCapRank").
+const BIG_SINGLE_BUCKET: RankBucket[] = [
+  { minRank: 1, maxRank: Number.POSITIVE_INFINITY, count: 5000 },
+];
 
 // Sprint 8 — Top 10 Selection (integração real contra o Postgres do docker-compose).
 //
@@ -22,10 +30,22 @@ describe("selectTopProjects (Prisma, integração real)", () => {
   const researchRunIds: string[] = [];
   const defillamaIdOf = new Map<string, string>();
 
-  async function seedProject(slugPrefix: string): Promise<string> {
+  // `marketCapRank` default (1) garante que os projetos deste arquivo entrem na faixa única de
+  // `BIG_SINGLE_BUCKET` sem precisar seedar em cada chamada — testes que verificam a seleção POR
+  // faixa (describe abaixo) passam um rank explícito.
+  async function seedProject(
+    slugPrefix: string,
+    marketCapRank: number | null = 1,
+  ): Promise<string> {
     const slug = `${slugPrefix}-${randomUUID()}`;
     const project = await prisma.project.create({
-      data: { slug, name: slug, defillamaId: slug, sectorId },
+      data: {
+        slug,
+        name: slug,
+        defillamaId: slug,
+        sectorId,
+        token: { create: { marketCapRank, retrievedAt: new Date() } },
+      },
     });
     projectIds.push(project.id);
     defillamaIdOf.set(project.id, project.defillamaId);
@@ -83,6 +103,7 @@ describe("selectTopProjects (Prisma, integração real)", () => {
     await prisma.researchRunSelection.deleteMany({ where: { projectId: { in: projectIds } } });
     await prisma.fundingRound.deleteMany({ where: { projectId: { in: projectIds } } });
     await prisma.fundamentalScore.deleteMany({ where: { projectId: { in: projectIds } } });
+    await prisma.token.deleteMany({ where: { projectId: { in: projectIds } } });
     for (const id of projectIds) {
       await prisma.project.delete({ where: { id } });
     }
@@ -96,7 +117,9 @@ describe("selectTopProjects (Prisma, integração real)", () => {
     await seedProject("cap-test");
     const runId = await seedResearchRun();
 
-    const selection = await selectTopProjects(runId, 1);
+    const selection = await selectTopProjects(runId, [
+      { minRank: 1, maxRank: Number.POSITIVE_INFINITY, count: 1 },
+    ]);
     // Mais de 1 só se todos empatarem no rank 1 (empatados nunca são descartados).
     expect(selection.every((s) => s.rank === 1)).toBe(true);
   }, 20000);
@@ -120,7 +143,11 @@ describe("selectTopProjects (Prisma, integração real)", () => {
 
     // topN grande o suficiente para garantir que os 3 candidatos deste teste entrem, mesmo com
     // outros projetos no banco.
-    const selection = await selectTopProjects(selectionRunId, 5000, growthMap([[projectB, 15]]));
+    const selection = await selectTopProjects(
+      selectionRunId,
+      BIG_SINGLE_BUCKET,
+      growthMap([[projectB, 15]]),
+    );
 
     const rankOf = (projectId: string) => selection.find((s) => s.projectId === projectId)?.rank;
     const rankA = rankOf(projectA);
@@ -154,7 +181,7 @@ describe("selectTopProjects (Prisma, integração real)", () => {
 
     const withGrowth = await selectTopProjects(
       withGrowthRunId,
-      5000,
+      BIG_SINGLE_BUCKET,
       growthMap([
         [stale, 0],
         [newcomer, 15],
@@ -165,7 +192,7 @@ describe("selectTopProjects (Prisma, integração real)", () => {
 
     // Sem o mapa (Discovery falhou): growth nunca é inventado — o recém-chegado volta a ficar
     // sem sinal e não é selecionado; o projeto pesquisado continua.
-    const withoutGrowth = await selectTopProjects(withoutGrowthRunId, 5000);
+    const withoutGrowth = await selectTopProjects(withoutGrowthRunId, BIG_SINGLE_BUCKET);
     const selectedWithout = new Set(withoutGrowth.map((s) => s.projectId));
     expect(selectedWithout.has(stale)).toBe(true);
     expect(selectedWithout.has(newcomer)).toBe(false);
@@ -181,7 +208,7 @@ describe("selectTopProjects (Prisma, integração real)", () => {
 
     await seedScore(projectX, scoringRunId, 20); // baixa prioridade no Run 1
 
-    await selectTopProjects(run1, 5000);
+    await selectTopProjects(run1, BIG_SINGLE_BUCKET);
     const run1SelectionX = await prisma.researchRunSelection.findUnique({
       where: { researchRunId_projectId: { researchRunId: run1, projectId: projectX } },
     });
@@ -191,7 +218,7 @@ describe("selectTopProjects (Prisma, integração real)", () => {
     // Entre os dois runs, X recebe um novo Score muito mais alto (simulando uma nova pesquisa).
     await seedScore(projectX, scoringRunId, 99);
 
-    await selectTopProjects(run2, 5000);
+    await selectTopProjects(run2, BIG_SINGLE_BUCKET);
     const run2SelectionX = await prisma.researchRunSelection.findUnique({
       where: { researchRunId_projectId: { researchRunId: run2, projectId: projectX } },
     });
@@ -224,14 +251,14 @@ describe("selectTopProjects (Prisma, integração real)", () => {
     const runId = await seedResearchRun();
     await seedScore(projectId, await seedResearchRun(), 55); // sem sinal, não seria selecionado
 
-    await selectTopProjects(runId, 5000);
+    await selectTopProjects(runId, BIG_SINGLE_BUCKET);
     const firstRows = await prisma.researchRunSelection.findMany({
       where: { researchRunId: runId },
     });
     const firstOwnRow = firstRows.find((r) => r.projectId === projectId);
     expect(firstOwnRow).toBeDefined();
 
-    await selectTopProjects(runId, 5000);
+    await selectTopProjects(runId, BIG_SINGLE_BUCKET);
     const secondRows = await prisma.researchRunSelection.findMany({
       where: { researchRunId: runId },
     });
@@ -245,5 +272,64 @@ describe("selectTopProjects (Prisma, integração real)", () => {
     expect(secondRows.filter((r) => r.projectId === projectId)).toHaveLength(1);
     expect(secondOwnRow!.rank).toBe(firstOwnRow!.rank);
     expect(Number(secondOwnRow!.priorityScore)).toBe(Number(firstOwnRow!.priorityScore));
+  }, 30000);
+
+  it("seleciona 2 (top 100) + 5 (101-250) + 3 (>250), respeitando a prioridade dentro de cada faixa", async () => {
+    const scoringRunId = await seedResearchRun();
+    const runId = await seedResearchRun();
+
+    // Mesmos limites de DEFAULT_RANK_BUCKETS, mas começando em 2 (não 1): `seedProject` sem rank
+    // explícito usa rank=1 por padrão, e outros testes deste arquivo deixam vários projetos
+    // nesse rank no banco (sem afterEach) — rank 1 ficaria contaminado por eles.
+    const buckets = [
+      { minRank: 2, maxRank: 100, count: 2 },
+      { minRank: 101, maxRank: 250, count: 5 },
+      { minRank: 251, maxRank: Number.POSITIVE_INFINITY, count: 3 },
+    ];
+
+    // 3 candidatos top100 (count=2): o de score mais baixo deve ficar de fora.
+    const top1 = await seedProject("top100-a", 10);
+    const top2 = await seedProject("top100-b", 50);
+    const top3 = await seedProject("top100-c", 90);
+    await seedScore(top1, scoringRunId, 90);
+    await seedScore(top2, scoringRunId, 80);
+    await seedScore(top3, scoringRunId, 10); // deve ficar de fora (só 2 vagas)
+
+    // 6 candidatos 101-250 (count=5): o de score mais baixo deve ficar de fora.
+    const midSlugs = await Promise.all(
+      [120, 150, 180, 200, 230, 249].map((rank, i) =>
+        seedProject(`mid-${i}`, rank).then(async (id) => {
+          await seedScore(id, scoringRunId, 90 - i * 10); // scores decrescentes
+          return id;
+        }),
+      ),
+    );
+
+    // 4 candidatos >250 (count=3): o de score mais baixo deve ficar de fora.
+    const lowSlugs = await Promise.all(
+      [260, 300, 500, 900].map((rank, i) =>
+        seedProject(`low-${i}`, rank).then(async (id) => {
+          await seedScore(id, scoringRunId, 90 - i * 10);
+          return id;
+        }),
+      ),
+    );
+
+    const selection = await selectTopProjects(runId, buckets);
+    const selectedIds = new Set(
+      selection
+        .filter((s) => [top1, top2, top3, ...midSlugs, ...lowSlugs].includes(s.projectId))
+        .map((s) => s.projectId),
+    );
+
+    expect(selectedIds.has(top1)).toBe(true);
+    expect(selectedIds.has(top2)).toBe(true);
+    expect(selectedIds.has(top3)).toBe(false); // 3ª vaga do top100, só cabem 2
+
+    expect(midSlugs.slice(0, 5).every((id) => selectedIds.has(id))).toBe(true);
+    expect(selectedIds.has(midSlugs[5]!)).toBe(false); // 6ª vaga do 101-250, só cabem 5
+
+    expect(lowSlugs.slice(0, 3).every((id) => selectedIds.has(id))).toBe(true);
+    expect(selectedIds.has(lowSlugs[3]!)).toBe(false); // 4ª vaga do >250, só cabem 3
   }, 30000);
 });

@@ -13,7 +13,25 @@ import { getLatestFundamentalScore } from "./score-repository";
 // `ResearchRunSelection`, uma fotografia imutável — nunca sobrescreve a seleção de uma run
 // anterior (seção 17).
 
-export const DEFAULT_TOP_N = 10;
+/** Faixas de rank do CoinGecko (`Project.marketCapRank`) que compõem o Top 10 final — pedido do
+ * usuário em 2026-11-02: 2 vagas entre as top 100, 5 entre 101–250, 3 acima de 250. Cada faixa é
+ * preenchida pelo mesmo critério de prioridade (`compareCandidates`) que decidia o Top 10 único
+ * antes desta mudança — só a composição por faixa é nova. Um candidato sem `marketCapRank`
+ * persistido (nunca pesquisado em detalhe antes, ver `pipeline.ts`) não pertence a nenhuma faixa
+ * e não é selecionado, mesmo com Score/growth altos (seção "sem dado sintético": sem rank real
+ * não há como decidir a faixa, e o rank nunca é inventado).
+ */
+export interface RankBucket {
+  minRank: number;
+  maxRank: number;
+  count: number;
+}
+
+export const DEFAULT_RANK_BUCKETS: readonly RankBucket[] = [
+  { minRank: 1, maxRank: 100, count: 2 },
+  { minRank: 101, maxRank: 250, count: 5 },
+  { minRank: 251, maxRank: Number.POSITIVE_INFINITY, count: 3 },
+];
 
 /** `change_7d` do TVL (pontos percentuais) por `defillamaId`, vindo de GET /protocols — ver
  * `DiscoverySummary.tvlChange7dByDefillamaId`. */
@@ -25,6 +43,7 @@ export interface CandidateProject {
   score: number | null;
   growth7d: number | null;
   daysSinceLastRaise: number | null;
+  marketCapRank: number | null;
 }
 
 /** Universo pesquisável = todo `Project` já conhecido (descoberto automaticamente ou
@@ -34,7 +53,12 @@ export async function buildCandidatePool(
   tvlChange7d: TvlChange7dByDefillamaId,
 ): Promise<CandidateProject[]> {
   const projects = await prisma.project.findMany({
-    select: { id: true, slug: true, defillamaId: true },
+    select: {
+      id: true,
+      slug: true,
+      defillamaId: true,
+      token: { select: { marketCapRank: true } },
+    },
   });
   const asOf = new Date();
 
@@ -56,6 +80,7 @@ export async function buildCandidatePool(
         score,
         growth7d: tvlChange7d.get(p.defillamaId) ?? null,
         daysSinceLastRaise: fundingAggregates.daysSinceLastRaise,
+        marketCapRank: p.token?.marketCapRank ?? null,
       };
     }),
   );
@@ -137,14 +162,14 @@ export function pickTopWithTies<T extends ScoredCandidate>(
 }
 
 /**
- * Calcula a prioridade de todo o universo, seleciona os `topN` primeiros e persiste a seleção
- * na `ResearchRunSelection` desta Research Run. Idempotente por construção: `researchRunId` +
- * `projectId` é `@@unique` no schema — reexecutar para a mesma run não duplica linhas (usa
- * `skipDuplicates`, seção 31).
+ * Calcula a prioridade de todo o universo, seleciona `buckets.count` candidatos por faixa de
+ * `marketCapRank` e persiste a seleção na `ResearchRunSelection` desta Research Run. Idempotente
+ * por construção: `researchRunId` + `projectId` é `@@unique` no schema — reexecutar para a mesma
+ * run não duplica linhas (usa `skipDuplicates`, seção 31).
  *
- * Empate no corte: se o candidato seguinte ao `topN`-ésimo empata com ele em TODOS os critérios
- * de `compareCandidates`, ele também entra (Top 10 vira Top 11, 12...) — nenhum empatado é
- * descartado. Empatados dividem o mesmo `rank` (1, 2, 2, 4...).
+ * Empate no corte: dentro de cada faixa, se o candidato seguinte ao corte empata com ele em
+ * TODOS os critérios de `compareCandidates`, ele também entra — nenhum empatado é descartado.
+ * Empatados dividem o mesmo `rank` global (1, 2, 2, 4...), com offset por faixas anteriores.
  *
  * `tvlChange7d` vem do Discovery da mesma run. Sem ele (Discovery falhou, ou chamada manual),
  * o Growth Momentum fica `null` para todos e a prioridade usa só Score + Capital — nunca um
@@ -152,13 +177,13 @@ export function pickTopWithTies<T extends ScoredCandidate>(
  */
 export async function selectTopProjects(
   researchRunId: string,
-  topN: number = DEFAULT_TOP_N,
+  buckets: readonly RankBucket[] = DEFAULT_RANK_BUCKETS,
   tvlChange7d: TvlChange7dByDefillamaId = new Map(),
 ): Promise<SelectedProject[]> {
   logSelectionEvent("selection.started", {
     researchRunId,
     modelVersion: PRIORITY_MODEL_VERSION,
-    topN,
+    buckets,
     growthSignalCount: tvlChange7d.size,
   });
 
@@ -173,7 +198,26 @@ export async function selectTopProjects(
     return { ...c, ...priority };
   });
 
-  const { ranked, selected } = pickTopWithTies(scored, topN);
+  // Cada faixa de rank é selecionada de forma independente (mesmo corte com empate de
+  // `pickTopWithTies`) e depois concatenada na ordem das faixas. O rank global soma o tamanho
+  // das faixas anteriores ao rank local, preservando empates dentro da mesma faixa.
+  let ranked: ScoredCandidate[] = [];
+  let selected: Array<ScoredCandidate & { rank: number }> = [];
+  let tieExpansion = 0;
+  for (const bucket of buckets) {
+    const inBucket = scored.filter(
+      (c) =>
+        c.marketCapRank !== null &&
+        c.marketCapRank >= bucket.minRank &&
+        c.marketCapRank <= bucket.maxRank,
+    );
+    const bucketResult = pickTopWithTies(inBucket, bucket.count);
+    const offset = selected.length;
+    ranked = ranked.concat(bucketResult.ranked);
+    selected = selected.concat(bucketResult.selected.map((s) => ({ ...s, rank: s.rank + offset })));
+    tieExpansion +=
+      bucketResult.selected.length - Math.min(bucket.count, bucketResult.ranked.length);
+  }
 
   if (selected.length > 0) {
     await prisma.researchRunSelection.createMany({
@@ -198,7 +242,7 @@ export async function selectTopProjects(
     candidatesWithGrowth: candidates.filter((c) => c.growth7d !== null).length,
     candidatesWithSignal: ranked.length,
     selectedCount: selected.length,
-    tieExpansion: selected.length - Math.min(topN, ranked.length),
+    tieExpansion,
   });
 
   return selected.map((s) => ({

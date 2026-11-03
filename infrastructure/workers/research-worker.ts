@@ -2,7 +2,7 @@ import "dotenv/config";
 import { Worker, type Job } from "bullmq";
 import { prisma } from "@crypto-research/database";
 import {
-  DEFAULT_TOP_N,
+  DEFAULT_RANK_BUCKETS,
   discoverProjects,
   revertRunCardsToBacklog,
   runManualResearchPipeline,
@@ -84,7 +84,7 @@ async function processResearchRunJob(job: Job<ResearchRunJobPayload>): Promise<v
       // universo — sem ele, projetos nunca pesquisados ficavam com prioridade 0 para sempre.
       const selection = await selectTopProjects(
         researchRunId,
-        DEFAULT_TOP_N,
+        DEFAULT_RANK_BUCKETS,
         tvlChange7dByDefillamaId,
       );
       log("research_run.selection_completed", {
