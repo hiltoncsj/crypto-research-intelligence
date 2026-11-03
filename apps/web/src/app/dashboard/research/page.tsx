@@ -27,6 +27,7 @@ interface ProjectListItem {
   name: string;
   lastUpdatedAt: string;
   lastSelection: { rank: number; priorityScore: number } | null;
+  coinGeckoRank: number | null;
 }
 
 function formatSelectedAt(iso: string): string {
@@ -373,7 +374,8 @@ export default function ResearchPage() {
         <p>
           Todo projeto já pesquisado (não só o Top 10 da Research Run mais recente). Quem é
           selecionado de novo tem os dados atualizados; os demais mantêm os dados da última
-          pesquisa. Ordenado pela data da última atualização.
+          pesquisa. Ordenado pela data da última atualização (dia mais recente primeiro) e, dentro
+          do mesmo dia, por rank CoinGecko crescente.
         </p>
         {projects.length === 0 ? (
           <p>Nenhum projeto processado ainda.</p>
@@ -393,14 +395,23 @@ export default function ResearchPage() {
                 style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}
               >
                 <Link href={`/dashboard/projects/${p.slug}`}>{p.name}</Link>
-                <span
-                  className="badge"
-                  title={
-                    p.lastSelection
-                      ? `Última seleção: #${p.lastSelection.rank} · Priority Score ${p.lastSelection.priorityScore.toFixed(2)}`
-                      : "Sem seleção registrada"
-                  }
-                >
+                {p.coinGeckoRank !== null && (
+                  <span
+                    className="badge"
+                    title="Rank de market cap na CoinGecko, entre todas as criptos"
+                  >
+                    CoinGecko #{p.coinGeckoRank}
+                  </span>
+                )}
+                {p.lastSelection && (
+                  <span
+                    className="badge"
+                    title="Priority Score da última seleção em que este projeto entrou"
+                  >
+                    Priority Score {p.lastSelection.priorityScore.toFixed(2)}
+                  </span>
+                )}
+                <span className="badge" title="Data da última pesquisa que atualizou este projeto">
                   Atualizado em {formatSelectedAt(p.lastUpdatedAt)}
                 </span>
               </li>

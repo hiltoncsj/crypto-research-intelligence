@@ -202,6 +202,11 @@ export interface ProjectWithDataItem {
   /** Seleção mais recente em alguma Research Run, se houver (projeto pesquisado por run manual
    * com slugs explícitos, ou cujo histórico de seleção se perdeu, não tem). */
   lastSelection: { rank: number; priorityScore: number } | null;
+  /** Rank de market cap da CoinGecko entre TODAS as criptos (não a posição no Top 10 da
+   * seleção) — vem de `Token.marketCapRank`, só conhecido depois da pesquisa detalhada do
+   * projeto (ver `selection.ts`). `null` quando o projeto nunca foi pesquisado em detalhe ou a
+   * CoinGecko não tem o dado. */
+  coinGeckoRank: number | null;
 }
 
 // "Projetos com dados" = todo projeto já pesquisado ao menos uma vez (tem Fundamental Score),
@@ -221,7 +226,7 @@ export async function listProjectsWithData(): Promise<ProjectWithDataItem[]> {
   const [projects, selections] = await Promise.all([
     prisma.project.findMany({
       where: { id: { in: projectIds } },
-      select: { id: true, slug: true, name: true },
+      select: { id: true, slug: true, name: true, token: { select: { marketCapRank: true } } },
     }),
     prisma.researchRunSelection.findMany({
       where: { projectId: { in: projectIds } },
@@ -247,12 +252,21 @@ export async function listProjectsWithData(): Promise<ProjectWithDataItem[]> {
       lastSelection: selection
         ? { rank: selection.rank, priorityScore: Number(selection.priorityScore) }
         : null,
+      coinGeckoRank: project.token?.marketCapRank ?? null,
     });
   }
 
+  // Dia mais recente primeiro; dentro do MESMO dia, rank CoinGecko crescente (pedido do usuário
+  // em 2026-11-03) — projetos sem rank conhecido (nunca pesquisados em detalhe) vão para o fim
+  // do dia.
   return items.sort((a, b) => {
-    const dateDiff = new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime();
-    return dateDiff !== 0 ? dateDiff : a.name.localeCompare(b.name);
+    const dayA = a.lastUpdatedAt.slice(0, 10);
+    const dayB = b.lastUpdatedAt.slice(0, 10);
+    if (dayA !== dayB) return dayA < dayB ? 1 : -1;
+    const rankA = a.coinGeckoRank ?? Number.POSITIVE_INFINITY;
+    const rankB = b.coinGeckoRank ?? Number.POSITIVE_INFINITY;
+    if (rankA !== rankB) return rankA - rankB;
+    return a.name.localeCompare(b.name);
   });
 }
 
